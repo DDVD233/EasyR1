@@ -101,6 +101,8 @@ def main():
     ppo_config.deep_post_init()
 
     if not ray.is_initialized():
+        print("ray not initialized")
+        
         runtime_env = {
             "env_vars": {
                 "TOKENIZERS_PARALLELISM": "true",
@@ -110,8 +112,7 @@ def main():
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
             }
         }
-        ray.init(runtime_env=runtime_env)
-
+        info = ray.init(runtime_env=runtime_env)
     runner = Runner.remote()
     ray.get(runner.run.remote(ppo_config))
 

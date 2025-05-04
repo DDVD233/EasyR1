@@ -1,6 +1,8 @@
 data:
-  train_files: /scratch/high_modality/geom_train.jsonl
-  val_files: /scratch/high_modality/geom_valid_mini.jsonl
+  # train_files: /scratch/high_modality/geom_train.jsonl
+  # val_files: /scratch/high_modality/geom_valid_mini.jsonl
+  train_files: /mnt/8T/high_modality/geom_train.jsonl
+  val_files: /mnt/8T/high_modality/geom_valid_mini.jsonl
   prompt_key: problem
   answer_key: answer
   image_key: images
@@ -69,23 +71,13 @@ worker:
     offload:
       offload_params: false
 
-  critic:
-    micro_batch_size_per_device_for_update: 2
-    micro_batch_size_per_device_for_experience: 8
-    fsdp:
-      enable_full_shard: true
-      enable_cpu_offload: false  # true: more CPU memory; false: more GPU memory
-      enable_rank0_init: true
-    offload:
-      offload_params: false
-
   reward:
     reward_type: function
     reward_function: ./examples/reward_function/medical.py:medical_compute_score
 
 trainer:
   total_episodes: 3
-  logger: ["console", "wandb", "file"]
+  logger: ["console", "wandb"]
   project_name: easy_r1
   experiment_name: qwen2_5_7b_math_grpo
   n_gpus_per_node: 8

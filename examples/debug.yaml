@@ -12,7 +12,6 @@ data:
   seed: 1
   max_pixels: 524288
   min_pixels: 65536
-  filter_overlong_prompts: false
 
 algorithm:
   adv_estimator: grpo
@@ -34,7 +33,6 @@ worker:
       enable_gradient_checkpointing: true
       trust_remote_code: true
       freeze_vision_tower: false
-      freeze_llm: true
     optim:
       lr: 1.0e-6
       weight_decay: 1.0e-2
@@ -44,7 +42,6 @@ worker:
       enable_full_shard: true
       enable_cpu_offload: false
       enable_rank0_init: true
-      use_orig_params: true 
     offload:
       offload_params: true  # true: more CPU memory; false: more GPU memory
       offload_optimizer: true  # true: more CPU memory; false: more GPU memory
@@ -55,7 +52,8 @@ worker:
     gpu_memory_utilization: 0.6
     enforce_eager: false
     enable_chunked_prefill: false
-    tensor_parallel_size: 2
+    # tensor_parallel_size: 2
+    tensor_parallel_size: 1
     limit_images: 16
     val_override_config:
       temperature: 0.5
@@ -71,8 +69,9 @@ worker:
       offload_params: false
 
   reward:
-    reward_type: sequential
-    reward_function: ./examples/reward_function/medical.py:medical_compute_score
+    reward_type: function
+    score_function: ./examples/score_function/medical.py:medical_compute_score
+    skip_special_tokens: true
 
 # trainer:
 #   total_episodes: 3
@@ -91,7 +90,7 @@ worker:
 #   load_checkpoint_path: null
 
 trainer:
-  total_epochs: 1
+  total_episodes: 1
   logger: ["console", "wandb"]
   project_name: easy_r1
   experiment_name: qwen2_5_7b_chapmanshaoxing
