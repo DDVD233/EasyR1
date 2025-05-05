@@ -56,6 +56,29 @@ class ConsoleLogger(Logger):
         print(f"Step {step}\n" + convert_dict_to_str(unflatten_dict(data)))
 
 
+class FileLogger(Logger):
+    def __init__(self, config: Dict[str, Any]) -> None:
+        self.log_dir = os.path.join(
+            "checkpoints",
+            config["trainer"]["project_name"],
+            config["trainer"]["experiment_name"]
+        )
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.log_file = os.path.join(self.log_dir, "train.log")
+
+        # Write config at the start
+        with open(self.log_file, 'w') as f:
+            f.write("Config\n")
+            f.write(convert_dict_to_str(config))
+            f.write("\n\n")
+
+    def log(self, data: Dict[str, Any], step: int) -> None:
+        with open(self.log_file, 'a') as f:
+            f.write(f"Step {step}\n")
+            f.write(convert_dict_to_str(unflatten_dict(data)))
+            f.write("\n\n")
+
+
 class MlflowLogger(Logger):
     def __init__(self, config: Dict[str, Any]) -> None:
         mlflow.start_run(run_name=config["trainer"]["experiment_name"])
@@ -128,6 +151,7 @@ LOGGERS = {
     "tensorboard": TensorBoardLogger,
     "console": ConsoleLogger,
     "swanlab": SwanlabLogger,
+    "file": FileLogger,
 }
 
 

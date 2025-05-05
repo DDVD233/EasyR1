@@ -20,7 +20,7 @@ from omegaconf import OmegaConf
 from ..single_controller.ray import RayWorkerGroup
 from ..utils.tokenizer import get_processor, get_tokenizer
 from ..workers.fsdp_workers import FSDPWorker
-from ..workers.reward import FunctionRewardManager
+from ..workers.reward import BatchFunctionRewardManager, SequentialFunctionRewardManager
 from .config import PPOConfig
 from .data_loader import create_dataloader
 from .ray_trainer import RayPPOTrainer, ResourcePoolManager, Role
@@ -38,11 +38,13 @@ class Runner:
         # instantiate tokenizer
         tokenizer = get_tokenizer(
             config.worker.actor.model.model_path,
+            override_chat_template=config.data.override_chat_template,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )
         processor = get_processor(
             config.worker.actor.model.model_path,
+            override_chat_template=config.data.override_chat_template,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )
@@ -65,7 +67,14 @@ class Runner:
         }
         resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
 
-        RemoteRewardManager = ray.remote(FunctionRewardManager).options(num_cpus=config.worker.reward.num_cpus)
+        if config.worker.reward.reward_type == "sequential":
+            RewardManager = SequentialFunctionRewardManager
+        elif config.worker.reward.reward_type == "batch":
+            RewardManager = BatchFunctionRewardManager
+        else:
+            raise NotImplementedError(f"Unknown reward type {config.worker.reward.reward_type}.")
+
+        RemoteRewardManager = ray.remote(RewardManager).options(num_cpus=config.worker.reward.num_cpus)
         reward_fn = RemoteRewardManager.remote(config.worker.reward, tokenizer)
         val_reward_fn = RemoteRewardManager.remote(config.worker.reward, tokenizer)
 
@@ -105,9 +114,10 @@ def main():
             "env_vars": {
                 "TOKENIZERS_PARALLELISM": "true",
                 "NCCL_DEBUG": "WARN",
-                "VLLM_LOGGING_LEVEL": "INFO",
+                "VLLM_LOGGING_LEVEL": "WARN",
                 "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
+                "PYTHONUNBUFFERED": "1",
             }
         }
         info = ray.init(runtime_env=runtime_env)

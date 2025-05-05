@@ -338,33 +338,33 @@ def compute_drpo_outcome_advantage(
     # 5)  KL-aware inverse-linear damping  (new)
     # ------------------------------------------------------------------ #
     # 5.1  rollout-level KL  (low-variance surrogate)
-    kl_tok      = compute_kl(log_probs, ref_log_probs, "low_var_kl")  # (B,L)
-    kl_tok      = kl_tok * response_mask
-    kl_rollout  = kl_tok.sum(dim=-1)                                  # (B,)
-
-    print("--------------After KL damping--------------")
-
-    z_abs = scores.abs() * kl_rollout  # (B,)  ≥ 0
-    t = _quantile_safe(z_abs, kl_q, eps)  # scalar > 0
-    m = t / (z_abs + t)  # (B,)  in (0,1]
-    # assert m is all positive
-    assert torch.all(m > 0.0), f"m = {m}  (t = {t})"
-
-    scores = m * scores  # sign kept
+    # kl_tok      = compute_kl(log_probs, ref_log_probs, "low_var_kl")  # (B,L)
+    # kl_tok      = kl_tok * response_mask
+    # kl_rollout  = kl_tok.sum(dim=-1)                                  # (B,)
+    #
+    # print("--------------After KL damping--------------")
+    #
+    # z_abs = scores.abs() * kl_rollout  # (B,)  ≥ 0
+    # t = _quantile_safe(z_abs, kl_q, eps)  # scalar > 0
+    # m = t / (z_abs + t)  # (B,)  in (0,1]
+    # # assert m is all positive
+    # assert torch.all(m > 0.0), f"m = {m}  (t = {t})"
+    #
+    # scores = m * scores  # sign kept
 
     # ------------------------------------------------------------------ #
     # 6) overall scaling factor  (final / raw)  &  per-domain logging
     # ------------------------------------------------------------------ #
 
-    scale_factor = scores / (before_scale_score + eps)  # (B,)
-
-    dom2scale = defaultdict(list)
-    for i in range(B):
-        dom2scale[domain_info[i]].append(scale_factor[i])
-
-    for dom, lst in dom2scale.items():
-        avg_sf = torch.mean(torch.stack(lst)).item()
-        print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
+    # scale_factor = scores / (before_scale_score + eps)  # (B,)
+    #
+    # dom2scale = defaultdict(list)
+    # for i in range(B):
+    #     dom2scale[domain_info[i]].append(scale_factor[i])
+    #
+    # for dom, lst in dom2scale.items():
+    #     avg_sf = torch.mean(torch.stack(lst)).item()
+    #     print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
 
     # ------------------------------------------------------------------ #
     # 6) broadcast back to token level
