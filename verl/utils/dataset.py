@@ -16,9 +16,11 @@ import math
 import os
 import logging
 import traceback
+import wfdb
 from collections import defaultdict
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Union
+from scipy.signal import resample
 
 import numpy as np
 import torch
@@ -72,6 +74,8 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
             elif isinstance(value, torch.Tensor):
                 tensors[key].append(value)
             else:
+                if key == "time-series":
+                    continue
                 non_tensors[key].append(value)
 
     # Second pass: pad segmentation masks to max dimensions
@@ -216,6 +220,32 @@ class ImageProcessMixin:
             # Return a small fallback image instead of crashing
             fallback = Image.new("RGB", (224, 224), (128, 128, 128))
             return fallback
+        
+    def process_time_series(self, full_path: str) -> torch.Tensor:
+        full_path = os.path.splitext(full_path)[0]
+        record = wfdb.rdrecord(full_path)
+        segment_length = 2500
+        ecg_data = record.p_signal
+
+        # Resample the data if the sampling frequency is not 500 Hz
+        if record.fs != 500:
+            # Calculate the new length for resampling
+            new_length = int((500 / record.fs) * record.sig_len)
+            ecg_data = resample(ecg_data, new_length)
+
+        # Truncate if data is longer than segment_length
+        if ecg_data.shape[0] > segment_length:
+            ecg_data = ecg_data[:segment_length]
+
+        # Pad with zeros if data is shorter than segment_length
+        if ecg_data.shape[0] < segment_length:
+            padding = np.zeros((segment_length - ecg_data.shape[0], ecg_data.shape[1]))
+            ecg_data = np.vstack((ecg_data, padding))
+
+        ecg_data = ecg_data.T
+        ecg_data = ecg_data[[0, 1, 6, 7, 8, 9, 10, 11], :]
+        return torch.tensor(ecg_data)
+    
 
 
 def resize_bbox(bbox, original_width, original_height, new_width, new_height):
@@ -261,6 +291,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         prompt_key: str = "prompt",
         answer_key: str = "answer",
         image_key: str = "images",
+            time_series_key: str = "time-series",
         max_prompt_length: int = 1024,
         truncation: str = "error",
         format_prompt: Optional[str] = None,
@@ -274,6 +305,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         self.prompt_key = prompt_key
         self.answer_key = answer_key
         self.image_key = image_key
+        self.time_series_key = time_series_key
         self.max_prompt_length = max_prompt_length
         self.truncation = truncation
         self.max_pixels = max_pixels
@@ -332,17 +364,18 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         if self.format_prompt:
             format_prompt = Template(self.format_prompt.strip())
             prompt_str = format_prompt.render(content=prompt_str)
-
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             content_list = []
-
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
                     content_list.append({"type": "image"})
 
                 if content:
                     content_list.append({"type": "text", "text": content})
+
+            if self.time_series_key in example and example[self.time_series_key]:
+                content_list.append({"type": "time-series"}) # add time series token
 
             return [{"role": "user", "content": content_list}]
         else:
@@ -373,18 +406,28 @@ class RLHFDataset(Dataset, ImageProcessMixin):
 
         processed_images = []
         original_dimensions = []  # Store original image dimensions
+        processed_time_series = []
 
         # Extract data_source and dataset
-        vision_path = row_dict['images']
-        if len(vision_path) == 0:
-            vision_path = row_dict['videos']
-        if len(vision_path) == 0:
-            row_dict["data_source"] = "unknown"
-            row_dict["dataset"] = "unknown"
-        vision_path = vision_path[0]
-        row_dict["data_source"] = vision_path.split("/")[0]
-        row_dict["dataset"] = vision_path.split("/")[1]
 
+        # Set vision_path to a nonempty vision path
+        # Or empty if both vision paths are empty
+        vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict['videos']
+        ts_path = row_dict['time-series']
+
+        if len(vision_path) != 0 and ts_path and len(ts_path) != 0:
+            row_dict["data_source"] = "multimodal"
+            row_dict["dataset"] = "mimic"
+        elif len(vision_path) != 0:
+            vision_path = vision_path[0]
+            row_dict["data_source"] = vision_path.split("/")[0]
+            row_dict["dataset"] = vision_path.split("/")[1]
+        elif ts_path and len(ts_path) != 0:
+            row_dict["data_source"] = "ecg"
+            # dataset already set in json
+        else:
+            raise ValueError("No modality found.")
+        
         if self.image_key in row_dict and row_dict["images"]:
             for i, image_item in enumerate(row_dict["images"]):
                 try:
@@ -443,12 +486,42 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                     logger.error(f"Worker {self.worker_id}: Error processing video {i} for item {index}: {str(e)}")
                     logger.error(traceback.format_exc())
 
+        if self.time_series_key in row_dict and row_dict[self.time_series_key]:
+            logger.debug(f"Worker {self.worker_id}: Processing time series for item {index}")
+            for i, time_series_item in enumerate(row_dict[self.time_series_key]):
+                try:
+                    if isinstance(time_series_item, str):
+                        full_path = os.path.join(self.data_dir, time_series_item)
+                        logger.debug(f"Worker {self.worker_id}: Loading time series {i} from {full_path}")
+
+                        if not os.path.exists(full_path):
+                            logger.warning(f"Worker {self.worker_id}: Time series file not found: {full_path}")
+                            raise FileNotFoundError(f"Time series file not found: {full_path}")
+                        else:
+                            # Load the time series data
+                            time_series = torch.load(full_path).to(torch.float32)
+                            # if time_series.dtype == torch.bfloat16:
+                            #     time_series = time_series.to(torch.float32)
+                    else:
+                        time_series = time_series_item
+                    processed_time_series.append(time_series)
+
+                except Exception as e:
+                    logger.error(f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
+                    logger.error(traceback.format_exc())
+
         # get size from processed_images
         if len(processed_images) > 0:
             image_size = processed_images[0].size
             logger.debug(f"Worker {self.worker_id}: Processed images size: {image_size}")
         else:
             image_size = (224, 224)
+
+        if len(processed_time_series) > 0:
+            time_series_size = processed_time_series[0].size()
+            logger.debug(f"Worker {self.worker_id}: Processed time series size: {time_series_size}")
+        else:
+            time_series_size = (8, 2500)
 
         # Load segmentation mask if available
         if "segmentation_path" in row_dict and row_dict["segmentation_path"]:
@@ -477,8 +550,11 @@ class RLHFDataset(Dataset, ImageProcessMixin):
 
         row_dict["images"] = processed_images
         row_dict["multi_modal_data"] = {
-            "image": processed_images
+            "image": processed_images,
         }
+        if processed_time_series:
+            row_dict[self.time_series_key] = processed_time_series
+            row_dict["multi_modal_data"][self.time_series_key] = processed_time_series
 
         # Replace all image tokens in prompt with placeholders
         prompt_str = prompt_str.replace("<video>", "<image>")
@@ -495,16 +571,35 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         row_dict[self.prompt_key] = prompt_str
         messages = self._build_messages(row_dict)
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+        
         try:
-            model_inputs = self.processor(row_dict["multi_modal_data"]["image"], [prompt], return_tensors="pt")
+            kwargs = dict()
+            if self.time_series_key in row_dict and row_dict[self.time_series_key]:
+                kwargs["time_series_data"] = row_dict["multi_modal_data"][self.time_series_key]
+            model_inputs = self.processor(
+                images=row_dict["multi_modal_data"]["image"],
+                text=[prompt],
+                return_tensors="pt",
+                **kwargs
+            )
+        
         except Exception as e:
             logger.error(f"Worker {self.worker_id}: Error processing model inputs: {str(e)}")
             # remove image
             row_dict["images"] = [Image.new("RGB", (224, 224), (255, 255, 255)) for _ in range(image_count)]
             row_dict["multi_modal_data"]["image"] = row_dict["images"]
-            model_inputs = self.processor(row_dict["multi_modal_data"]["image"], prompt, return_tensors="pt")
+            kwargs = dict()
+            if self.time_series_key in row_dict and row_dict[self.time_series_key]:
+                kwargs["time_series_data"] = row_dict["multi_modal_data"][self.time_series_key]
+            model_inputs = self.processor(
+                images=row_dict["multi_modal_data"]["image"],
+                text=[prompt],
+                return_tensors="pt",
+                **kwargs
+            )
         input_ids = model_inputs.pop("input_ids")[0]
         attention_mask = model_inputs.pop("attention_mask")[0]
+
         # Resize segmentation mask to match the image dimensions in model_inputs
         if row_dict["segmentation_mask"] is not None:
             try:
