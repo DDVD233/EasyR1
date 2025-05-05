@@ -54,7 +54,6 @@ worker:
     enforce_eager: false
     enable_chunked_prefill: false
     tensor_parallel_size: 2
-    # tensor_parallel_size: 1
     limit_images: 16
     val_override_config:
       temperature: 0.5
@@ -70,7 +69,7 @@ worker:
       offload_params: false
 
   reward:
-    reward_type: function
+    reward_type: sequential
     reward_function: ./examples/reward_function/medical.py:medical_compute_score
 
 # trainer:
@@ -90,7 +89,7 @@ worker:
 #   load_checkpoint_path: null
 
 trainer:
-  total_episodes: 1
+  total_epochs: 1
   logger: ["console", "wandb"]
   project_name: easy_r1
   experiment_name: qwen2_5_7b_chapmanshaoxing
