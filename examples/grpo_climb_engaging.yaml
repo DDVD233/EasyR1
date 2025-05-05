@@ -22,7 +22,7 @@ algorithm:
   disable_kl: false
   use_kl_loss: true
   kl_penalty: low_var_kl
-  kl_coef: 1.0e-4
+  kl_coef: 1.0e-2
 
 worker:
   actor:
@@ -77,7 +77,7 @@ worker:
 
 trainer:
   total_episodes: 3
-  logger: ["console", "wandb"]
+  logger: ["console", "wandb", "file"]
   project_name: easy_r1
   experiment_name: qwen2_5_7b_math_grpo
   n_gpus_per_node: 8
