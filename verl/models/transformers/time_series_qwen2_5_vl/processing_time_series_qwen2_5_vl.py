@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from typing import List, Union, Optional
-from transformers import Qwen2_5_VLProcessor, BatchFeature, AutoImageProcessor, AutoTokenizer
+from transformers import Qwen2_5_VLProcessor, BatchFeature, AutoTokenizer, Qwen2VLImageProcessorFast
 from transformers.processing_utils import Unpack
 from transformers.tokenization_utils_base import PreTokenizedInput, TextInput
 from transformers.image_utils import ImageInput, VideoInput
@@ -10,7 +10,7 @@ class TimeSeriesQwen2_5_VLProcessor(Qwen2_5_VLProcessor):
     """
     Simplified processor to support time series inputs alongside text and vision
     """
-    image_processor_class = "AutoImageProcessor"
+    image_processor_class = "Qwen2VLImageProcessorFast"
     tokenizer_class = "TimeSeriesQwen2TokenizerFast"
     def __init__(
         self, 
@@ -105,7 +105,7 @@ class TimeSeriesQwen2_5_VLProcessor(Qwen2_5_VLProcessor):
         """
         # Load the base processor
         
-        image_processor = AutoImageProcessor.from_pretrained("Qwen/Qwen2.5-VL-3B-Instruct", **kwargs)
+        image_processor = Qwen2VLImageProcessorFast.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", **kwargs)
         tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **kwargs)
         return cls(
             image_processor=image_processor,

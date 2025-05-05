@@ -13,12 +13,9 @@ with list od bounding box in a key called "bbox_2d" with the format [x1, y1, x2,
 The reasoning process MUST BE enclosed within <think> </think> tags. The final answer MUST BE put in \boxed{}.
 EOL
 
-# Read the system prompt from the file
-format_prompt=$(cat system_prompt.txt)
 
 python -m verl.trainer.main \
     config=examples/debug.yaml \
     algorithm.adv_estimator=reinforce_plus_plus \
-    data.format_prompt="${format_prompt}" \
     worker.actor.model.model_path=/home/peili/EasyR1/verl/models/transformers/time_series_qwen2_5_vl \
     trainer.n_gpus_per_node=2
