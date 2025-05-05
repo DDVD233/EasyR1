@@ -10,7 +10,7 @@ EasyR1 is efficient and scalable due to the design of **[HybirdEngine](https://a
 ## Features
 
 - Supported models
-  - Llama3/Qwen2/Qwen2.5 language models
+  - Llama3/Qwen2/Qwen2.5/Qwen3 language models
   - Qwen2/Qwen2.5-VL vision language models
   - DeepSeek-R1 distill models
 
@@ -149,6 +149,7 @@ See [baselines.md](assets/baselines.md).
 - **Temporal-R1**: Envolving Temporal Reasoning Capability into LMMs via Temporal Consistent Reward. [![[code]](https://img.shields.io/github/stars/appletea233/Temporal-R1)](https://github.com/appletea233/Temporal-R1)
 - **NoisyRollout**: Reinforcing Visual Reasoning with Data Augmentation. [![[code]](https://img.shields.io/github/stars/John-AI-Lab/NoisyRollout)](https://github.com/John-AI-Lab/NoisyRollout) [![[arxiv]](https://img.shields.io/badge/arxiv-2504.13055-blue)](https://arxiv.org/pdf/2504.13055)
 - **GUI-R1**: A Generalist R1-Style Vision-Language Action Model For GUI Agents. [![[code]](https://img.shields.io/github/stars/ritzz-ai/GUI-R1)](https://github.com/ritzz-ai/GUI-R1) [![[arxiv]](https://img.shields.io/badge/arxiv-2504.10458-blue)](https://arxiv.org/abs/2504.10458)
+- **R1-Track**: Direct Application of MLLMs to Visual Object Tracking via Reinforcement Learning. [![[code]](https://img.shields.io/github/stars/Wangbiao2/R1-Track)](https://github.com/Wangbiao2/R1-Track)
 
 ## TODO
 
