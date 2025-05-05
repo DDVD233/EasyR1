@@ -36,6 +36,7 @@ MANIFEST
 *.safetensors
 *.ipynb
 *.txt
+*.json
 
 # Installer logs
 pip-log.txt
