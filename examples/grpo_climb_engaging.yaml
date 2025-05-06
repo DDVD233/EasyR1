@@ -69,6 +69,16 @@ worker:
     offload:
       offload_params: false
 
+  critic:
+    micro_batch_size_per_device_for_update: 2
+    micro_batch_size_per_device_for_experience: 8
+    fsdp:
+      enable_full_shard: true
+      enable_cpu_offload: false  # true: more CPU memory; false: more GPU memory
+      enable_rank0_init: true
+    offload:
+      offload_params: false
+
   reward:
     reward_type: function
     reward_function: ./examples/reward_function/medical.py:medical_compute_score

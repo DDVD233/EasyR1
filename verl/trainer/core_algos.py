@@ -27,20 +27,15 @@ import torch
 import torch.nn.functional as F
 
 from ..utils import torch_functional as VF
+import torch
+import torch.nn.functional as F
+from collections import defaultdict
+from typing import Tuple
+import numpy as np
 
 
 if TYPE_CHECKING:
     from .config import AlgorithmConfig
-
-
-domain_running_stats = defaultdict(lambda: {
-    "mean": 0.0,
-    "var": 0.0,    # We'll track population variance via Welford's algorithm, or something similar
-    "count": 0
-})
-global_running_stats = {"mean": 0.0, "var": 0.0, "count": 0}
-GLOBAL_TRAIN_STEP = 0        # you can increment this elsewhere
-FADE_STEPS = 100             # after this many steps, group-based re-centering is 0
 
 
 class KLController(ABC):
@@ -143,19 +138,6 @@ def compute_gae_advantage_return(
     return advantages, returns
 
 
-def update_global_stats(x: float):
-    """Online update of overall mean/variance with Welford’s algorithm."""
-    stats = global_running_stats
-    stats["count"] += 1
-    c = stats["count"]
-    delta = x - stats["mean"]
-    stats["mean"] += delta / c
-    stats["var"] += delta * (x - stats["mean"])
-
-def get_global_mean(eps: float = 1e-6) -> float:
-    return global_running_stats["mean"] + eps    # avoid zero‑division later
-
-
 # NOTE(sgm): this implementation only consider outcome supervision, where the reward is a scalar.
 @torch.no_grad()
 def compute_grpo_outcome_advantage(
@@ -198,6 +180,29 @@ def compute_grpo_outcome_advantage(
     return returns, returns
 
 
+domain_running_stats = defaultdict(lambda: {
+    "mean": 0.0,
+    "var": 0.0,    # We'll track population variance via Welford's algorithm, or something similar
+    "count": 0
+})
+global_running_stats = {"mean": 0.0, "var": 0.0, "count": 0}
+GLOBAL_TRAIN_STEP = 0        # you can increment this elsewhere
+FADE_STEPS = 100             # after this many steps, group-based re-centering is 0
+
+
+def update_global_stats(x: float):
+    """Online update of overall mean/variance with Welford’s algorithm."""
+    stats = global_running_stats
+    stats["count"] += 1
+    c = stats["count"]
+    delta = x - stats["mean"]
+    stats["mean"] += delta / c
+    stats["var"] += delta * (x - stats["mean"])
+
+def get_global_mean(eps: float = 1e-6) -> float:
+    return global_running_stats["mean"] + eps    # avoid zero‑division later
+
+
 def update_domain_stats(domain: str, x: float):
     stats = domain_running_stats[domain]
     stats["count"] += 1
@@ -219,21 +224,6 @@ def get_domain_mean_std(domain: str, eps=1e-6):
     return mean, std
 
 
-def _quantile_safe(x: torch.Tensor, q: float, eps: float) -> torch.Tensor:
-    """Robust percentile that never returns 0 (to avoid divide-by-zero)."""
-    if torch.allclose(x, torch.zeros_like(x)):
-        return torch.tensor(eps, dtype=x.dtype, device=x.device)
-    return torch.quantile(x, q).detach().clamp_min(eps)
-
-
-import torch
-import torch.nn.functional as F
-from collections import defaultdict
-from typing import Tuple
-import numpy as np
-
-
-# ----  helper --------------------------------------------------------------
 def _quantile_safe(x: torch.Tensor, q: float, eps: float) -> torch.Tensor:
     """Robust percentile that never returns 0 (to avoid divide-by-zero)."""
     if torch.allclose(x, torch.zeros_like(x)):
@@ -338,33 +328,33 @@ def compute_drpo_outcome_advantage(
     # 5)  KL-aware inverse-linear damping  (new)
     # ------------------------------------------------------------------ #
     # 5.1  rollout-level KL  (low-variance surrogate)
-    # kl_tok      = compute_kl(log_probs, ref_log_probs, "low_var_kl")  # (B,L)
-    # kl_tok      = kl_tok * response_mask
-    # kl_rollout  = kl_tok.sum(dim=-1)                                  # (B,)
-    #
-    # print("--------------After KL damping--------------")
-    #
-    # z_abs = scores.abs() * kl_rollout  # (B,)  ≥ 0
-    # t = _quantile_safe(z_abs, kl_q, eps)  # scalar > 0
-    # m = t / (z_abs + t)  # (B,)  in (0,1]
-    # # assert m is all positive
-    # assert torch.all(m > 0.0), f"m = {m}  (t = {t})"
-    #
-    # scores = m * scores  # sign kept
+    kl_tok      = compute_kl(log_probs, ref_log_probs, "low_var_kl")  # (B,L)
+    kl_tok      = kl_tok * response_mask
+    kl_rollout  = kl_tok.sum(dim=-1)                                  # (B,)
+
+    print("--------------After KL damping--------------")
+
+    z_abs = scores.abs() * kl_rollout  # (B,)  ≥ 0
+    t = _quantile_safe(z_abs, kl_q, eps)  # scalar > 0
+    m = t / (z_abs + t)  # (B,)  in (0,1]
+    # assert m is all positive
+    assert torch.all(m > 0.0), f"m = {m}  (t = {t})"
+
+    scores = m * scores  # sign kept
 
     # ------------------------------------------------------------------ #
     # 6) overall scaling factor  (final / raw)  &  per-domain logging
     # ------------------------------------------------------------------ #
 
-    # scale_factor = scores / (before_scale_score + eps)  # (B,)
-    #
-    # dom2scale = defaultdict(list)
-    # for i in range(B):
-    #     dom2scale[domain_info[i]].append(scale_factor[i])
-    #
-    # for dom, lst in dom2scale.items():
-    #     avg_sf = torch.mean(torch.stack(lst)).item()
-    #     print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
+    scale_factor = scores / (before_scale_score + eps)  # (B,)
+
+    dom2scale = defaultdict(list)
+    for i in range(B):
+        dom2scale[domain_info[i]].append(scale_factor[i])
+
+    for dom, lst in dom2scale.items():
+        avg_sf = torch.mean(torch.stack(lst)).item()
+        print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
 
     # ------------------------------------------------------------------ #
     # 6) broadcast back to token level
