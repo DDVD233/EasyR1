@@ -19,19 +19,15 @@ implement PPO
 """
 import math
 from abc import ABC, abstractmethod
-from collections import defaultdict
 from typing import TYPE_CHECKING, Tuple
-
-import numpy as np
-import torch
-import torch.nn.functional as F
-
 from ..utils import torch_functional as VF
-import torch
 import torch.nn.functional as F
+import math, random
 from collections import defaultdict
-from typing import Tuple
+from typing import List, Tuple
 import numpy as np
+import torch
+from sklearn.cluster import KMeans
 
 
 if TYPE_CHECKING:
@@ -180,96 +176,124 @@ def compute_grpo_outcome_advantage(
     return returns, returns
 
 
-domain_running_stats = defaultdict(lambda: {
-    "mean": 0.0,
-    "var": 0.0,    # We'll track population variance via Welford's algorithm, or something similar
-    "count": 0
-})
-global_running_stats = {"mean": 0.0, "var": 0.0, "count": 0}
-GLOBAL_TRAIN_STEP = 0        # you can increment this elsewhere
-FADE_STEPS = 100             # after this many steps, group-based re-centering is 0
+# --------------------------------------------------------------------------- #
+#  Running statistics (simple)                                                #
+# --------------------------------------------------------------------------- #
+domain_running_stats = defaultdict(lambda: {"count": 0, "values": []})
+global_running_stats = {"count": 0}
+EPS_DEFAULT = 1e-6
 
 
-def update_global_stats(x: float):
-    """Online update of overall mean/variance with Welford’s algorithm."""
-    stats = global_running_stats
-    stats["count"] += 1
-    c = stats["count"]
-    delta = x - stats["mean"]
-    stats["mean"] += delta / c
-    stats["var"] += delta * (x - stats["mean"])
-
-def get_global_mean(eps: float = 1e-6) -> float:
-    return global_running_stats["mean"] + eps    # avoid zero‑division later
+def update_global_stats(_: float):
+    """Only track total sample count (needed for N_total)."""
+    global_running_stats["count"] += 1
 
 
 def update_domain_stats(domain: str, x: float):
+    """Record reward for clustering and per‑domain sample count."""
     stats = domain_running_stats[domain]
     stats["count"] += 1
-    c = stats["count"]
-    delta = x - stats["mean"]
-    stats["mean"] += delta / c
-    stats["var"] += delta * (x - stats["mean"])
+    stats["values"].append(float(x))
 
 
-def get_domain_mean_std(domain: str, eps=1e-6):
-    stats = domain_running_stats[domain]
-    c = stats["count"]
-    if c < 2:
-        # not enough data, fallback
-        return stats["mean"], 1.0
-    mean = stats["mean"]
-    var = stats["var"] / (c - 1)
-    std = max(var, eps) ** 0.5
-    return mean, std
-
-
+# --------------------------------------------------------------------------- #
+#  Utility helpers                                                            #
+# --------------------------------------------------------------------------- #
 def _quantile_safe(x: torch.Tensor, q: float, eps: float) -> torch.Tensor:
-    """Robust percentile that never returns 0 (to avoid divide-by-zero)."""
     if torch.allclose(x, torch.zeros_like(x)):
         return torch.tensor(eps, dtype=x.dtype, device=x.device)
     return torch.quantile(x, q).detach().clamp_min(eps)
 
 
-# ----  main ----------------------------------------------------------------
+# --------------------------------------------------------------------------- #
+#  Elbow‑based k‑selection                                                    #
+# --------------------------------------------------------------------------- #
+def _select_k_elbow(vals: np.ndarray, k_max: int = 10, tol: float = 0.10) -> int:
+    """
+    Elbow heuristic:
+      choose the smallest k whose relative drop in inertia falls below `tol`.
+      We never try more clusters than unique points.
+    """
+    unique_cnt = len(np.unique(vals))
+    k_cap      = min(k_max, unique_cnt)          # avoid duplicate‑point warnings
+    ks         = range(1, k_cap + 1)
+
+    inertias = []
+    for k in ks:
+        km = KMeans(n_clusters=k, n_init="auto", random_state=0).fit(vals)
+        inertias.append(km.inertia_)
+
+    if len(inertias) == 1:                       # all points identical
+        return 1
+
+    drops = np.diff(inertias) * -1.0             # positive improvements
+    for i in range(1, len(drops)):
+        if drops[i] < tol * drops[i - 1]:
+            return i + 1                         # elbow found
+    return ks[-1]                                # fallback to max k
+
+
+# --------------------------------------------------------------------------- #
+#  Cluster‑weighted domain mean                                               #
+# --------------------------------------------------------------------------- #
+def _cluster_weighted_mean(values: list[float], eps: float = EPS_DEFAULT) -> float:
+    """
+    Inverse‑cluster‑size weighted mean of k‑means centroids.
+    Uses `_select_k_elbow` to pick k and prints one‑line debug info.
+    """
+    n = len(values)
+    if n == 0:
+        return eps
+    if n == 1:
+        return values[0]
+
+    vals = np.array(values, dtype=np.float32).reshape(-1, 1)
+
+    k_opt = _select_k_elbow(vals, k_max=10)
+    km    = KMeans(n_clusters=k_opt, n_init="auto", random_state=0).fit(vals)
+
+    centroids = km.cluster_centers_.flatten()                # (k,)
+    _, counts = np.unique(km.labels_, return_counts=True)
+    counts    = counts.astype(float).clip(min=1.0)
+
+    weights = 1.0 / counts                                   # inverse cluster size
+    weighted_mean = float((weights * centroids).sum() / weights.sum())
+
+    # -------- debug print (single line) ---------------------------------- #
+    print(
+        f"[KMEANS] k={k_opt} | centroids="
+        f"[{', '.join(f'{c:.3f}' for c in centroids)}] | "
+        f"counts={counts.tolist()} | weighted_mean={weighted_mean:.3f}"
+    )
+
+    return weighted_mean
+
+
+
+# --------------------------------------------------------------------------- #
+#  DRPO outcome‑advantage                                                     #
+# --------------------------------------------------------------------------- #
 @torch.no_grad()
 def compute_drpo_outcome_advantage(
-    token_level_rewards: torch.Tensor,       # (bs, seq_len)  —  reward **before** KL penalty
-    response_mask:      torch.Tensor,        # (bs, seq_len)
-    index:              np.ndarray,          # (bs,)          —  question UUIDs
-    domain_info:        np.ndarray,          # (bs,)          —  domain strings
-    log_probs:          torch.Tensor,        # (bs, seq_len)  —  log πθ
-    ref_log_probs:      torch.Tensor,        # (bs, seq_len)  —  log πref
-    eps: float = 1e-6,
-    kl_q: float = 0.75,                      # percentile for the “soft” damper
+    token_level_rewards: torch.Tensor,       # (B,L)
+    response_mask:      torch.Tensor,        # (B,L)
+    index:              np.ndarray,          # (B,)
+    domain_info:        np.ndarray,          # (B,)
+    log_probs:          torch.Tensor,        # (B,L)
+    ref_log_probs:      torch.Tensor,        # (B,L)
+    eps: float = EPS_DEFAULT,
+    kl_q: float = 0.75,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    DRPO outcome-advantage with inverse-linear KL-aware damping.
 
-    Steps
-    -----
-    1.   Sum token rewards → per-rollout raw score.
-    2.   Update running mean/var per domain & global.
-    3.   GRPO question-wise normalisation.
-    4.   Domain temperature scaling.
-    5.   **NEW**  KL-based inverse-linear damping
-         m =  t / (z + t)  where  z = max(score * KL , 0),
-         t = 75-th percentile of z in the current mini-batch.
-    6.   Broadcast back to token level and return (advantages, returns).
-
-    The function purposely *does not* subtract β·KL; that will be done
-    later by `apply_kl_penalty`.
-    """
     B, L = token_level_rewards.shape
-    device = token_level_rewards.device
 
     # ------------------------------------------------------------------ #
-    # 1) outcome score per rollout (raw reward, summed over tokens)
+    # 1) rollout‑level raw scores
     # ------------------------------------------------------------------ #
-    raw_scores = token_level_rewards.sum(dim=-1)                     # (B,)
+    raw_scores = token_level_rewards.sum(dim=-1)                         # (B,)
 
     # ------------------------------------------------------------------ #
-    # 2) update running stats (domain / global)            – unchanged –
+    # 2) update statistics
     # ------------------------------------------------------------------ #
     for i in range(B):
         r = raw_scores[i].item()
@@ -278,88 +302,81 @@ def compute_drpo_outcome_advantage(
         update_global_stats(r)
 
     # ------------------------------------------------------------------ #
-    # 3) GRPO question-wise normalisation                – unchanged –
+    # 3) GRPO question‑wise normalisation
     # ------------------------------------------------------------------ #
-    scores = raw_scores.clone()                                      # (B,)
+    scores = raw_scores.clone()
     id2score = defaultdict(list)
-
     for i in range(B):
         id2score[index[i]].append(scores[i])
-
     id2mean = {k: torch.mean(torch.stack(v)) for k, v in id2score.items()}
     id2std  = {k: torch.std (torch.stack(v)) for k, v in id2score.items()}
-
     for i in range(B):
         mu, sd = id2mean[index[i]], id2std[index[i]]
         scores[i] = (scores[i] - mu) / (sd + eps)
-
     before_scale_score = scores.clone()
 
     # ------------------------------------------------------------------ #
-    # 4) domain temperature scaling
+    # 4) domain temperature scaling with cluster means
     # ------------------------------------------------------------------ #
-    N_total  = float(global_running_stats["count"])
-    mu_total = float(global_running_stats["mean"]) if abs(global_running_stats["mean"]) > eps else eps
+    N_total = float(global_running_stats["count"])
 
     print(global_running_stats)
     print(domain_running_stats)
 
+    clustered_mu_cache = {
+        dom: _cluster_weighted_mean(stats["values"])
+        for dom, stats in domain_running_stats.items()
+        if stats["count"] > 0
+    }
+    mu_total = float(np.mean(list(clustered_mu_cache.values()))) if clustered_mu_cache else eps
+    mu_total = mu_total if abs(mu_total) > eps else eps
+
     for i in range(B):
-        d_stats       = domain_running_stats[domain_info[i]]
-        N_d, mu_d     = float(d_stats["count"]), float(d_stats["mean"])
-        T_d           = max((N_d / N_total) * (mu_d / mu_total), eps)
-        # assert T_d > 0.0
-        assert T_d > 0.0, f"T_d = {T_d}  (N_d = {N_d}, mu_d = {mu_d})"
-        scores[i]     = scores[i] / T_d                               # (B,)
+        dom       = domain_info[i]
+        N_d       = float(domain_running_stats[dom]["count"])
+        mu_d      = clustered_mu_cache[dom]
+        T_d       = max((N_d / N_total) * (mu_d / mu_total), eps)
+        scores[i] = scores[i] / T_d
 
     print("--------------Before KL damping--------------")
 
-    scale_factor = scores / (before_scale_score + eps)  # (B,)
-
+    scale_factor = scores / (before_scale_score + eps)
     dom2scale = defaultdict(list)
     for i in range(B):
         dom2scale[domain_info[i]].append(scale_factor[i])
-
     for dom, lst in dom2scale.items():
         avg_sf = torch.mean(torch.stack(lst)).item()
         print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
 
     # ------------------------------------------------------------------ #
-    # 5)  KL-aware inverse-linear damping  (new)
+    # 5) KL‑aware inverse‑linear damping
     # ------------------------------------------------------------------ #
-    # 5.1  rollout-level KL  (low-variance surrogate)
-    kl_tok      = compute_kl(log_probs, ref_log_probs, "low_var_kl")  # (B,L)
-    kl_tok      = kl_tok * response_mask
-    kl_rollout  = kl_tok.sum(dim=-1)                                  # (B,)
-
-    print("--------------After KL damping--------------")
-
-    z_abs = scores.abs() * kl_rollout  # (B,)  ≥ 0
-    t = _quantile_safe(z_abs, kl_q, eps)  # scalar > 0
-    m = t / (z_abs + t)  # (B,)  in (0,1]
-    # assert m is all positive
-    assert torch.all(m > 0.0), f"m = {m}  (t = {t})"
-
-    scores = m * scores  # sign kept
-
-    # ------------------------------------------------------------------ #
-    # 6) overall scaling factor  (final / raw)  &  per-domain logging
-    # ------------------------------------------------------------------ #
-
-    scale_factor = scores / (before_scale_score + eps)  # (B,)
-
-    dom2scale = defaultdict(list)
-    for i in range(B):
-        dom2scale[domain_info[i]].append(scale_factor[i])
-
-    for dom, lst in dom2scale.items():
-        avg_sf = torch.mean(torch.stack(lst)).item()
-        print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
+    # kl_tok     = compute_kl(log_probs, ref_log_probs, "low_var_kl")      # (B,L)
+    # kl_tok     *= response_mask
+    # kl_rollout = kl_tok.sum(dim=-1)
+    #
+    # print("--------------After KL damping--------------")
+    #
+    # z_abs  = scores.abs() * kl_rollout
+    # t      = _quantile_safe(z_abs, kl_q, eps)
+    # m      = t / (z_abs + t)
+    # scores = m * scores
+    #
+    # # ------------------------------------------------------------------ #
+    # # 6) logging after KL damping
+    # # ------------------------------------------------------------------ #
+    # scale_factor = scores / (before_scale_score + eps)
+    # dom2scale.clear()
+    # for i in range(B):
+    #     dom2scale[domain_info[i]].append(scale_factor[i])
+    # for dom, lst in dom2scale.items():
+    #     avg_sf = torch.mean(torch.stack(lst)).item()
+    #     print(f"[DRPO]  domain = {dom:<15} | mean overall scale = {avg_sf:6.3f}")
 
     # ------------------------------------------------------------------ #
-    # 6) broadcast back to token level
+    # 7) broadcast back to token level
     # ------------------------------------------------------------------ #
-    returns = scores.unsqueeze(-1) * response_mask                    # (B,L)
+    returns = scores.unsqueeze(-1) * response_mask                       # (B,L)
     return returns, returns
 
 

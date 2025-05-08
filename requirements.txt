@@ -21,3 +21,4 @@ timm
 tensorboard
 heavyball
 wfdb
+scikit-learn
