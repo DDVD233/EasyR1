@@ -318,6 +318,13 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
     # Calculate format score (how well the JSON follows the expected format)
     format_score = evaluate_bbox_format(predict_str)
 
+    # length score
+    if len(predict_str) > 1000:  # ~200 words
+        length_score = 1
+    else:
+        length_score = len(predict_str) * 0.001
+
+
     # Calculate bounding box IoU score
     iou_score = 0.0
     # Extract predicted bounding boxes from the response
@@ -351,10 +358,11 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
             # traceback.print_exc()
 
     scores = {
-        "overall": 0.5 * standard_score + 0.3 * iou_score + 0.2 * format_score,
+        "overall": 0.5 * standard_score + 0.3 * iou_score + 0.1 * format_score + 0.1 * length_score,
         "standard_score": standard_score,
         "iou_score": iou_score,
         "format_score": format_score,
+        "length_score": length_score,
     }
     return scores
 
