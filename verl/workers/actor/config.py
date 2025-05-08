@@ -28,6 +28,8 @@ class ModelConfig:
     enable_gradient_checkpointing: bool = True
     trust_remote_code: bool = True
     freeze_vision_tower: bool = False
+    freeze_llm: bool = False
+    freeze_time_series_encoder: bool = False
 
     def post_init(self):
         if self.tokenizer_path is None:

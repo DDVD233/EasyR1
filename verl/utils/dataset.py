@@ -336,6 +336,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             content_list = []
+
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
                     content_list.append({"type": "image"})
@@ -504,7 +505,6 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             model_inputs = self.processor(row_dict["multi_modal_data"]["image"], prompt, return_tensors="pt")
         input_ids = model_inputs.pop("input_ids")[0]
         attention_mask = model_inputs.pop("attention_mask")[0]
-
         # Resize segmentation mask to match the image dimensions in model_inputs
         if row_dict["segmentation_mask"] is not None:
             try:
