@@ -107,6 +107,10 @@ def time_series_vllm_patch():
     # 3) Apply the monkey-patch
     BaseMultiModalProcessor._validate_mm_placeholders = _validate_mm_placeholders_skip_ts
 
+    # from vllm.inputs import INPUT_REGISTRY
+    # from verl.models.transformers.time_series_qwen2_5_vl.processing_time_series_qwen2_5_vl import TimeSeriesQwen2_5_VLProcessor
+    # INPUT_REGISTRY.register_input_processor(TimeSeriesQwen2_5_VLProcessor)
+    from transformers import AutoTokenizer
     _orig_apply = BaseMultiModalProcessor.apply
     def _apply_with_time_series(
         self,
@@ -118,6 +122,7 @@ def time_series_vllm_patch():
         multi_inputs = _orig_apply(
             self, prompt, mm_data, hf_processor_mm_kwargs, return_mm_hashes
         )
+        # multi_inputs["prompt_token_ids"] = multi_inputs["prompt_token_ids"].replace(151665, 151665 * 50, 1)
         # inject your tensor into the kwargs that get passed to get_multimodal_embeddings
         if "time-series" in mm_data:
             ts = mm_data["time-series"]

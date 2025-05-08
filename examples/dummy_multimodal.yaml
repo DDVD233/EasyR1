@@ -34,6 +34,7 @@ worker:
       enable_gradient_checkpointing: true
       trust_remote_code: true
       freeze_vision_tower: false
+      freeze_llm: true
     optim:
       lr: 1.0e-6
       weight_decay: 1.0e-2
@@ -43,6 +44,7 @@ worker:
       enable_full_shard: true
       enable_cpu_offload: false
       enable_rank0_init: true
+      use_orig_params: true # used when freezing
     offload:
       offload_params: true
       offload_optimizer: true

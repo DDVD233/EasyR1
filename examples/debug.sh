@@ -15,7 +15,7 @@ EOL
 
 
 python -m verl.trainer.main \
-    config=examples/debug.yaml \
+    config=examples/unified_ts_training.yaml \
     algorithm.adv_estimator=reinforce_plus_plus \
     worker.actor.model.model_path=/home/peili/EasyR1/verl/models/transformers/time_series_qwen2_5_vl \
-    trainer.n_gpus_per_node=2
+    trainer.n_gpus_per_node=4

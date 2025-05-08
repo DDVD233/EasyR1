@@ -367,6 +367,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             content_list = []
+
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
                     content_list.append({"type": "image"})
@@ -571,7 +572,6 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         row_dict[self.prompt_key] = prompt_str
         messages = self._build_messages(row_dict)
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-        
         try:
             kwargs = dict()
             if self.time_series_key in row_dict and row_dict[self.time_series_key]:
@@ -599,7 +599,6 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             )
         input_ids = model_inputs.pop("input_ids")[0]
         attention_mask = model_inputs.pop("attention_mask")[0]
-
         # Resize segmentation mask to match the image dimensions in model_inputs
         if row_dict["segmentation_mask"] is not None:
             try:

@@ -1,13 +1,14 @@
 data:
-  train_files: /scratch/ecg/ChapmanShaoxing_train.json
-  val_files: /scratch/ecg/ChapmanShaoxing_valid.json
+  train_files: /scratch/high_modality/unified_train.json
+  val_files: /scratch/high_modality/unified_valid.json
   prompt_key: problem
   answer_key: answer
   image_key: images
-  max_prompt_length: 6140
-  max_response_length: 2048
-  rollout_batch_size: 256
-  val_batch_size: 256
+  max_prompt_length: 4000
+  max_response_length: 4000
+  rollout_batch_size: 512
+  val_batch_size: 1024
+  format_prompt: ./examples/format_prompt/medical_format.jinja
   shuffle: true
   seed: 1
   max_pixels: 524288
@@ -19,22 +20,23 @@ algorithm:
   disable_kl: false
   use_kl_loss: true
   kl_penalty: low_var_kl
-  kl_coef: 1.0e-2
+  kl_coef: 1.0e-6
 
 worker:
   actor:
     global_batch_size: 128
     micro_batch_size_per_device_for_update: 4
     micro_batch_size_per_device_for_experience: 16
-    max_grad_norm: 10.0
+    max_grad_norm: 1.0
     padding_free: true
     ulysses_sequence_parallel_size: 1
     model:
-      model_path: Qwen/Qwen2.5-3B-Instruct
+      model_path: Qwen/Qwen2.5-7B-Instruct
       enable_gradient_checkpointing: true
       trust_remote_code: true
       freeze_vision_tower: false
-      freeze_llm: true
+      freeze_llm: false
+      freeze_time_series_encoder: true
     optim:
       lr: 1.0e-6
       weight_decay: 1.0e-2
@@ -44,19 +46,20 @@ worker:
       enable_full_shard: true
       enable_cpu_offload: false
       enable_rank0_init: true
-      use_orig_params: true 
+      use_orig_params: true # used when freezing
     offload:
       offload_params: true  # true: more CPU memory; false: more GPU memory
       offload_optimizer: true  # true: more CPU memory; false: more GPU memory
 
   rollout:
-    temperature: 1.0
     n: 5
+    temperature: 1.0
+    top_p: 0.99
     gpu_memory_utilization: 0.6
     enforce_eager: false
     enable_chunked_prefill: false
     tensor_parallel_size: 2
-    limit_images: 16
+    limit_images: 4
     val_override_config:
       temperature: 0.5
       n: 1
@@ -74,34 +77,18 @@ worker:
     reward_type: sequential
     reward_function: ./examples/reward_function/medical.py:medical_compute_score
 
-# trainer:
-#   total_episodes: 3
-#   logger: ["console", "wandb"]
-#   project_name: easy_r1
-#   experiment_name: debug
-#   n_gpus_per_node: 4
-#   nnodes: 1
-#   val_freq: 200
-#   val_before_train: true
-#   val_only: false
-#   val_generations_to_log: 3
-#   save_freq: 200  # -1 to disable
-#   save_limit: 3  # -1 to disable
-#   save_checkpoint_path: null
-#   load_checkpoint_path: null
-
 trainer:
-  total_epochs: 1
-  logger: ["console", "wandb"]
+  total_epochs: 3
+  logger: ["console", "wandb", "file"]
   project_name: easy_r1
-  experiment_name: qwen2_5_7b_chapmanshaoxing
-  n_gpus_per_node: 4
+  experiment_name: unified_ts_no_freeze
+  n_gpus_per_node: 8
   nnodes: 1
-  val_freq: 30
+  val_freq: 5  # -1 to disable
   val_before_train: true
   val_only: false
   val_generations_to_log: 3
-  save_freq: 200  # -1 to disable
+  save_freq: 20  # -1 to disable
   save_limit: 3  # -1 to disable
   save_checkpoint_path: null
   load_checkpoint_path: null

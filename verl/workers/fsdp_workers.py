@@ -271,6 +271,17 @@ class FSDPWorker(Worker):
             else:
                 self.print_rank0("No vision tower found.")
 
+        if model_config.freeze_llm:
+            model.model.embed_tokens.requires_grad_(False)
+            model.model.layers.requires_grad_(False)
+            model.model.norm.requires_grad_(False)
+            model.lm_head.requires_grad_(False) 
+            print('LLM is freezed')
+
+        if model_config.freeze_time_series_encoder:
+            model.time_series_embedding.encoder.requires_grad_(False)
+            print('Time-series encoder is freezed')
+
         dist.barrier()
         print_model_size(model)
         print_gpu_memory_usage("After huggingface model init")
