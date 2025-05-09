@@ -278,7 +278,7 @@ class AnyPrecisionAdamW(torch.optim.Optimizer):
             lr = group["lr"]
             weight_decay = group["weight_decay"]
             eps = group["eps"]
-            use_kahan_summation = group["use_kahan_summation"]
+            use_kahan_summation = group.get("use_kahan_summation", True)
 
             momentum_dtype = PrecisionType.to_dtype(group["momentum_dtype"])
             variance_dtype = PrecisionType.to_dtype(group["variance_dtype"])

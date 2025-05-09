@@ -7,4 +7,5 @@ python -m verl.trainer.main \
     algorithm.adv_estimator=drpo \
     worker.actor.model.model_path=/scratch/outputs/qwen/qwen25_vision_model \
     trainer.n_gpus_per_node=4 \
-    trainer.experiment_name=drpo_custom_encoder_nokl
+    worker.rollout.tensor_parallel_size=1 \
+    trainer.experiment_name=drpo_custom_encoder

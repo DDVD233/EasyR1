@@ -336,20 +336,6 @@ class FSDPWorker(Worker):
                     betas=optim_config.betas,
                     weight_decay=optim_config.weight_decay,
                 )
-            elif optim_config.strategy == "muon":
-                self.optimizer = ForeachMuon(
-                    filter(lambda p: p.requires_grad, self.fsdp_module.parameters()),
-                    lr=optim_config.lr,
-                    betas=optim_config.betas,
-                    weight_decay=optim_config.weight_decay,
-                )
-            elif optim_config.strategy == "soap":
-                self.optimizer = PrecondScheduleForeachSOAP(
-                    filter(lambda p: p.requires_grad, self.fsdp_module.parameters()),
-                    lr=optim_config.lr,
-                    betas=optim_config.betas,
-                    weight_decay=optim_config.weight_decay,
-                )
             else:
                 raise NotImplementedError(f"Optimizer {optim_config.strategy} not supported.")
 
