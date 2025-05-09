@@ -442,7 +442,7 @@ class FSDPWorker(Worker):
             from .critic.dp_critic import DataParallelPPOCritic  # lazy import
 
             self.critic = DataParallelPPOCritic(
-                config=self.config,
+                config=self.config.critic,
                 critic_module=self.fsdp_module,
                 critic_optimizer=self.optimizer,
             )

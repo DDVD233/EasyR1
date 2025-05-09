@@ -20,7 +20,7 @@ algorithm:
   disable_kl: false
   use_kl_loss: true
   kl_penalty: low_var_kl
-  kl_coef: 1.0e-6
+  kl_coef: 1.0e-4
 
 worker:
   actor:
@@ -65,6 +65,16 @@ worker:
     fsdp:
       enable_full_shard: true
       enable_cpu_offload: true  # true: more CPU memory; false: more GPU memory
+      enable_rank0_init: true
+    offload:
+      offload_params: false
+
+  critic:
+    micro_batch_size_per_device_for_update: 2
+    micro_batch_size_per_device_for_experience: 8
+    fsdp:
+      enable_full_shard: true
+      enable_cpu_offload: false  # true: more CPU memory; false: more GPU memory
       enable_rank0_init: true
     offload:
       offload_params: false
