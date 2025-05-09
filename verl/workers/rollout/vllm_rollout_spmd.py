@@ -30,6 +30,16 @@ from ...utils.torch_dtypes import PrecisionType
 from .base import BaseRollout
 from .config import RolloutConfig
 
+# from vllm.model_executor.models.registry import ModelRegistry
+# from verl.models.transformers.vllm_qwen import TimeSeriesQwen2_5_VLForConditionalGeneration
+
+# ModelRegistry.register_model(
+#     "TimeSeriesQwen2_5_VLForConditionalGeneration",
+#     TimeSeriesQwen2_5_VLForConditionalGeneration
+# )
+
+from ...models.monkey_patch import time_series_vllm_patch
+time_series_vllm_patch()
 
 def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, List[Any]]:
     if isinstance(value, torch.Tensor):

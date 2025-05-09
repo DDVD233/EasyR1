@@ -38,11 +38,13 @@ class Runner:
         # instantiate tokenizer
         tokenizer = get_tokenizer(
             config.worker.actor.model.model_path,
+            override_chat_template=config.data.override_chat_template,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )
         processor = get_processor(
             config.worker.actor.model.model_path,
+            override_chat_template=config.data.override_chat_template,
             trust_remote_code=config.worker.actor.model.trust_remote_code,
             use_fast=True,
         )
@@ -105,13 +107,13 @@ def main():
             "env_vars": {
                 "TOKENIZERS_PARALLELISM": "true",
                 "NCCL_DEBUG": "WARN",
-                "VLLM_LOGGING_LEVEL": "INFO",
+                "VLLM_LOGGING_LEVEL": "WARN",
                 "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
+                "PYTHONUNBUFFERED": "1",
             }
         }
-        ray.init(runtime_env=runtime_env)
-
+        info = ray.init(runtime_env=runtime_env)
     runner = Runner.remote()
     ray.get(runner.run.remote(ppo_config))
 
