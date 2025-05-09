@@ -32,7 +32,8 @@ def apply_ulysses_patch(model_type: str) -> None:
         Qwen2_5_VLFlashAttention2.forward = qwen2_vl_attn_forward
     else:
         raise NotImplementedError(f"Model architecture {model_type} is not supported yet.")
-    
+
+
 def time_series_vllm_patch():
     from vllm.model_executor.models.registry import ModelRegistry
     from verl.models.transformers.vllm_qwen import TimeSeriesQwen2_5_VLForConditionalGeneration
@@ -51,10 +52,10 @@ def time_series_vllm_patch():
         def __init__(self, data: list[torch.Tensor]) -> None:
             # data: list of (n_channels, seq_len) tensors
             super().__init__(data, "time-series")
-        
+
         def get_processor_data(self):
             return {}
-            
+
         # def get_passthrough_data(self):
         #     return {"time-series": self.data}
 
@@ -91,9 +92,9 @@ def time_series_vllm_patch():
 
     # 2) Define a wrapper that skips "time-series"
     def _validate_mm_placeholders_skip_ts(
-        self,
-        mm_placeholders: Mapping[str, list],
-        mm_item_counts: Mapping[str, int],
+            self,
+            mm_placeholders: Mapping[str, list],
+            mm_item_counts: Mapping[str, int],
     ) -> None:
         # Filter out the time-series entry so it's never checked
         filtered_counts = {
@@ -112,12 +113,13 @@ def time_series_vllm_patch():
     # INPUT_REGISTRY.register_input_processor(TimeSeriesQwen2_5_VLProcessor)
     from transformers import AutoTokenizer
     _orig_apply = BaseMultiModalProcessor.apply
+
     def _apply_with_time_series(
-        self,
-        prompt,
-        mm_data,
-        hf_processor_mm_kwargs,
-        return_mm_hashes=False,
+            self,
+            prompt,
+            mm_data,
+            hf_processor_mm_kwargs,
+            return_mm_hashes=False,
     ):
         multi_inputs = _orig_apply(
             self, prompt, mm_data, hf_processor_mm_kwargs, return_mm_hashes
@@ -128,7 +130,7 @@ def time_series_vllm_patch():
             ts = mm_data["time-series"]
             multi_inputs["mm_kwargs"]["time-series"] = ts
             multi_inputs["mm_placeholders"]["time-series"] = [{
-                "offset": multi_inputs["prompt_token_ids"].index(151665), # <|time_series_pad|>
+                "offset": multi_inputs["prompt_token_ids"].index(151665),  # <|time_series_pad|>
                 "length": 1
             }]
             multi_inputs["mm_kwargs"]._items_by_modality["time-series"] = [MultiModalKwargsItem({
@@ -139,7 +141,7 @@ def time_series_vllm_patch():
                     field=MultiModalBatchedField()
                 )
             })]
-        
+
         return multi_inputs
 
     BaseMultiModalProcessor.apply = _apply_with_time_series
@@ -179,5 +181,4 @@ def time_series_vllm_patch():
     # BaseMultiModalProcessor._get_prompt_updates = (
     #     _get_prompt_updates_skip_ts
     # )
-
 
