@@ -410,15 +410,23 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         processed_time_series = []
 
         # Extract data_source and dataset
-        # vision_path = row_dict['images']
-        # if len(vision_path) == 0:
-        #     vision_path = row_dict['videos']
-        # if len(vision_path) == 0:
-        #     row_dict["data_source"] = "unknown"
-        #     row_dict["dataset"] = "unknown"
-        # vision_path = vision_path[0]
-        # row_dict["data_source"] = vision_path.split("/")[0]
-        # row_dict["dataset"] = vision_path.split("/")[1]
+        vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict['videos']
+        ts_path = row_dict.get('time-series', [])
+        if ts_path is None:
+            ts_path = []
+
+        if len(vision_path) != 0 and ts_path and len(ts_path) != 0:
+            row_dict["data_source"] = "multimodal"
+            row_dict["dataset"] = "mimic"
+        elif len(vision_path) != 0:
+            vision_path = vision_path[0]
+            row_dict["data_source"] = vision_path.split("/")[0]
+            row_dict["dataset"] = vision_path.split("/")[1]
+        elif ts_path and len(ts_path) != 0:
+            row_dict["data_source"] = "ecg"
+            # dataset already set in json
+        else:
+            raise ValueError("No modality found.")
 
         if self.image_key in row_dict and row_dict["images"]:
             for i, image_item in enumerate(row_dict["images"]):
