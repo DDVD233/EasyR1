@@ -413,7 +413,9 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         # Set vision_path to a nonempty vision path
         # Or empty if both vision paths are empty
         vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict['videos']
-        ts_path = row_dict['time-series']
+        ts_path = row_dict.get('time-series', [])
+        if ts_path is None:
+            ts_path = []
 
         if len(vision_path) != 0 and len(ts_path) != 0:
             row_dict["data_source"] = "multimodal"
