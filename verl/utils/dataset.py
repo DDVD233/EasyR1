@@ -93,7 +93,7 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
                 pad_right = max_width - w
                 # Pad the mask using numpy padding
                 padded_mask = np.pad(mask, ((0, 0), (0, pad_bottom), (0, pad_right)),
-                                    mode='constant', constant_values=0)
+                                     mode='constant', constant_values=0)
                 padded_masks.append(padded_mask)
             elif len(mask.shape) == 2:  # [H, W]
                 h, w = mask.shape
@@ -102,7 +102,7 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
                 pad_right = max_width - w
                 # Pad the mask using numpy padding
                 padded_mask = np.pad(mask, ((0, pad_bottom), (0, pad_right)),
-                                   mode='constant', constant_values=0)
+                                     mode='constant', constant_values=0)
                 padded_mask = padded_mask[np.newaxis, :, :]  # Add channel dimension
                 padded_masks.append(padded_mask)
             else:
@@ -220,7 +220,7 @@ class ImageProcessMixin:
             # Return a small fallback image instead of crashing
             fallback = Image.new("RGB", (224, 224), (128, 128, 128))
             return fallback
-        
+
     def process_time_series(self, full_path: str) -> torch.Tensor:
         full_path = os.path.splitext(full_path)[0]
         record = wfdb.rdrecord(full_path)
@@ -245,7 +245,6 @@ class ImageProcessMixin:
         ecg_data = ecg_data.T
         ecg_data = ecg_data[[0, 1, 6, 7, 8, 9, 10, 11], :]
         return torch.tensor(ecg_data)
-    
 
 
 def resize_bbox(bbox, original_width, original_height, new_width, new_height):
@@ -284,17 +283,17 @@ class RLHFDataset(Dataset, ImageProcessMixin):
     """
 
     def __init__(
-        self,
-        data_path: str,
-        tokenizer: PreTrainedTokenizer,
-        processor: Optional[ProcessorMixin],
-        prompt_key: str = "prompt",
-        answer_key: str = "answer",
-        image_key: str = "images",
+            self,
+            data_path: str,
+            tokenizer: PreTrainedTokenizer,
+            processor: Optional[ProcessorMixin],
+            prompt_key: str = "prompt",
+            answer_key: str = "answer",
+            image_key: str = "images",
             time_series_key: str = "time-series",
-        max_prompt_length: int = 1024,
-        truncation: str = "error",
-        format_prompt: Optional[str] = None,
+            max_prompt_length: int = 1024,
+            truncation: str = "error",
+            format_prompt: Optional[str] = None,
             max_pixels: Optional[int] = None,
             min_pixels: Optional[int] = None,
             video_frames=2,
@@ -364,10 +363,10 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         if self.format_prompt:
             format_prompt = Template(self.format_prompt.strip())
             prompt_str = format_prompt.render(content=prompt_str)
-
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             content_list = []
+
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
                     content_list.append({"type": "image"})
@@ -376,7 +375,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                     content_list.append({"type": "text", "text": content})
 
             if self.time_series_key in example and example[self.time_series_key]:
-                content_list.append({"type": "time-series"}) # add time series token
+                content_list.append({"type": "time-series"})  # add time series token
 
             return [{"role": "user", "content": content_list}]
         else:
@@ -386,7 +385,8 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         messages = self._build_messages(example)
         processing_class = self.processor if self.processor is not None else self.tokenizer
         return (
-            len(processing_class.apply_chat_template(messages, add_generation_prompt=True)) <= self.max_prompt_length
+                len(processing_class.apply_chat_template(messages,
+                                                         add_generation_prompt=True)) <= self.max_prompt_length
         )
 
     def __len__(self):
@@ -410,6 +410,9 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         processed_time_series = []
 
         # Extract data_source and dataset
+
+        # Set vision_path to a nonempty vision path
+        # Or empty if both vision paths are empty
         vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict['videos']
         ts_path = row_dict.get('time-series', [])
         if ts_path is None:
@@ -507,8 +510,12 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                     processed_time_series.append(time_series)
 
                 except Exception as e:
-                    logger.error(f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
+                    logger.error(
+                        f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
                     logger.error(traceback.format_exc())
+        else:
+            time_series = torch.zeros((8, 2500), dtype=torch.float32)
+            processed_time_series.append(time_series)
 
         # get size from processed_images
         if len(processed_images) > 0:
@@ -571,7 +578,6 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         row_dict[self.prompt_key] = prompt_str
         messages = self._build_messages(row_dict)
         prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-        
         try:
             kwargs = dict()
             if self.time_series_key in row_dict and row_dict[self.time_series_key]:
@@ -582,7 +588,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                 return_tensors="pt",
                 **kwargs
             )
-        
+
         except Exception as e:
             logger.error(f"Worker {self.worker_id}: Error processing model inputs: {str(e)}")
             # remove image
@@ -599,7 +605,6 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             )
         input_ids = model_inputs.pop("input_ids")[0]
         attention_mask = model_inputs.pop("attention_mask")[0]
-
         # Resize segmentation mask to match the image dimensions in model_inputs
         if row_dict["segmentation_mask"] is not None:
             try:
@@ -657,8 +662,8 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                     )
 
                     logger.debug(f"Worker {self.worker_id}: Resized bbox from {row_dict['bbox']} to {resized_bbox}. "
-                                f"Original dimensions: {original_dimensions[0]}, "
-                                f"Target dimensions: {target_width}x{target_height}")
+                                 f"Original dimensions: {original_dimensions[0]}, "
+                                 f"Target dimensions: {target_width}x{target_height}")
                     row_dict["bbox"] = resized_bbox
                 else:
                     logger.warning(f"Worker {self.worker_id}: No original dimensions available for bbox resizing")
@@ -700,7 +705,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         raw_prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
         if len(raw_prompt_ids) > self.max_prompt_length:
             if self.truncation == "left":
-                raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length :]
+                raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length:]
             elif self.truncation == "right":
                 raw_prompt_ids = raw_prompt_ids[: self.max_prompt_length]
             elif self.truncation == "error":

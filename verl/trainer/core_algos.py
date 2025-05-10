@@ -344,8 +344,9 @@ def compute_drpo_outcome_advantage(
         scaling_factors.append(factor)
         scores[i] = scores[i] / factor
 
-    mean_factor = float(np.mean(scaling_factors)) if scaling_factors else 1.0
-    scores *= mean_factor
+    # divide scores by std of scores
+    scores_std = torch.std(scores)
+    scores = scores / (scores_std + eps)
 
     # Debug report -------------------------------------------------------- #
     print("--------------Hierarchical scaling report--------------")

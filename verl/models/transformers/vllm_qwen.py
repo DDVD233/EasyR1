@@ -8,21 +8,24 @@ from vllm.transformers_utils.config import uses_mrope
 
 from verl.models.transformers.time_series_qwen2_5_vl.modeling_time_series_qwen2_5_vl import TimeSeriesEmbedding
 
+
 class Qwen2_5_VLTimesSeriesDataInputs(TypedDict):
     type: Literal["time-series"]
     time_series_data: torch.Tensor
 
+
 class Qwen2_5_VLTimesSeriesEmbeddingInputs(TypedDict):
     type: Literal["time-series_embeds"]
     time_series_embeds: torch.Tensor
+
 
 Qwen2_5_VLTimeSeriesInputs = Union[
     Qwen2_5_VLTimesSeriesDataInputs,
     Qwen2_5_VLTimesSeriesEmbeddingInputs,
 ]
 
+
 class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
-    
     # copied these from vllm.model_executor.models.qwen2_5_vl
     packed_modules_mapping = {
         "qkv_proj": [
@@ -41,13 +44,13 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
         "lm_head.": "language_model.lm_head.",
         "model.": "language_model.model.",
     })
-    
+
     def __init__(self, *, vllm_config, prefix):
         super().__init__(vllm_config=vllm_config, prefix=prefix)
         self.time_series_embedding = TimeSeriesEmbedding(3584, torch.bfloat16)
 
     def _validate_and_reshape_mm_tensor(self, mm_input, name):
-        if name == 'time series data': # patch for time series data
+        if name == 'time series data':  # patch for time series data
             if isinstance(mm_input, list):
                 mm_input = torch.stack(mm_input)
             return mm_input.squeeze((1, 2))
@@ -64,29 +67,29 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
         if time_series_data is not None:
             time_series_data = self._validate_and_reshape_mm_tensor(
                 time_series_data, "time series data")
-            
+
             if not isinstance(time_series_data, (torch.Tensor, list)):
                 raise ValueError("Incorrect type of time series data. "
                                  f"Got type: {type(time_series_data)}")
-            
+
             return Qwen2_5_VLTimesSeriesDataInputs(
                 type="time-series",
                 time_series_data=time_series_data,
             )
-        
+
         if time_series_embeds is not None:
             time_series_embeds = self._validate_and_reshape_mm_tensor(
                 time_series_embeds, "time series embeds")
-            
+
             if not isinstance(time_series_embeds, (torch.Tensor, list)):
                 raise ValueError("Incorrect type of time series embeds. "
                                  f"Got type: {type(time_series_embeds)}")
-            
+
             return Qwen2_5_VLTimesSeriesEmbeddingInputs(
                 type="time-series_embeds",
                 time_series_embeds=time_series_embeds,
             )
-            
+
     def _process_time_series_input(self, time_series_input):
         if time_series_input["type"] == "time-series_embeds":
             time_series_embeds = time_series_input["time-series_embeds"].type(self.time_series_embedding.dtype)
@@ -112,9 +115,9 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
                              ) and "time-series" not in mm_input_by_modality:
                 mm_input_by_modality[
                     "time-series"] = self._parse_and_validate_time_series_input(**kwargs)
-                
+
         return mm_input_by_modality
-    
+
     def get_multimodal_embeddings(self, **kwargs):
         mm_input_by_modality = self._parse_and_validate_multimodal_inputs(
             **kwargs)
@@ -136,11 +139,11 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
         return multimodal_embeddings
 
     def get_input_embeddings_v0(
-        self,
-        input_ids,
-        image_input = None,
-        video_input = None,
-        time_series_input = None,
+            self,
+            input_ids,
+            image_input=None,
+            video_input=None,
+            time_series_input=None,
     ):
         inputs_embeds = self.get_input_embeddings(input_ids)
         if image_input is not None:
@@ -170,11 +173,11 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
                 placeholder_token_id=self.config.time_series_token_id,
             )
         return inputs_embeds
-    
+
     def get_input_embeddings(
-        self,
-        input_ids,
-        multimodal_embeddings=None,
+            self,
+            input_ids,
+            multimodal_embeddings=None,
     ) -> torch.Tensor:
         inputs_embeds = self.language_model.get_input_embeddings(input_ids)
         if multimodal_embeddings is not None:
@@ -190,14 +193,13 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
             )
         return inputs_embeds
 
-
     def forward(
-        self,
-        input_ids,
-        positions,
-        intermediate_tensors = None,
-        inputs_embeds = None,
-        **kwargs,
+            self,
+            input_ids,
+            positions,
+            intermediate_tensors=None,
+            inputs_embeds=None,
+            **kwargs,
     ):
 
         if intermediate_tensors is not None:
