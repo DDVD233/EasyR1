@@ -40,4 +40,4 @@ def save_qwen25_processor(output_path):
 
 
 if __name__ == "__main__":
-    save_qwen25_processor('/scratch/outputs/qwen/qwen25_vision_model')
+    save_qwen25_processor('/scratch/outputs/drpo_new_nvidia_custom_encoder_ups')

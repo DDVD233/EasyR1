@@ -38,8 +38,11 @@ from .config import RolloutConfig
 #     TimeSeriesQwen2_5_VLForConditionalGeneration
 # )
 
-from ...models.monkey_patch import time_series_vllm_patch
-time_series_vllm_patch()
+try:
+    from ...models.monkey_patch import time_series_vllm_patch
+    time_series_vllm_patch()
+except Exception as e:
+    print(f"Failed to apply time series vllm patch. Error: {e}")
 
 def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, List[Any]]:
     if isinstance(value, torch.Tensor):

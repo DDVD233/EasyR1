@@ -127,20 +127,24 @@ def time_series_vllm_patch():
         # multi_inputs["prompt_token_ids"] = multi_inputs["prompt_token_ids"].replace(151665, 151665 * 50, 1)
         # inject your tensor into the kwargs that get passed to get_multimodal_embeddings
         if "time-series" in mm_data:
-            ts = mm_data["time-series"]
-            multi_inputs["mm_kwargs"]["time-series"] = ts
-            multi_inputs["mm_placeholders"]["time-series"] = [{
-                "offset": multi_inputs["prompt_token_ids"].index(151665),  # <|time_series_pad|>
-                "length": 1
-            }]
-            multi_inputs["mm_kwargs"]._items_by_modality["time-series"] = [MultiModalKwargsItem({
-                "time-series": MultiModalFieldElem(
-                    modality="time-series",
-                    key="time-series",
-                    data=ts,
-                    field=MultiModalBatchedField()
-                )
-            })]
+            try:
+                ts = mm_data["time-series"]
+                multi_inputs["mm_kwargs"]["time-series"] = ts
+                multi_inputs["mm_placeholders"]["time-series"] = [{
+                    "offset": multi_inputs["prompt_token_ids"].index(151665),  # <|time_series_pad|>
+                    "length": 1
+                }]
+                multi_inputs["mm_kwargs"]._items_by_modality["time-series"] = [MultiModalKwargsItem({
+                    "time-series": MultiModalFieldElem(
+                        modality="time-series",
+                        key="time-series",
+                        data=ts,
+                        field=MultiModalBatchedField()
+                    )
+                })]
+            except ValueError:
+                # 151665 not in prompt_token_ids
+                pass
 
         return multi_inputs
 

@@ -319,7 +319,7 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
     format_score = evaluate_bbox_format(predict_str)
 
     # length score
-    if len(predict_str) > 1000:  # ~200 words
+    if len(predict_str) > 600:  # ~200 words
         length_score = 1
     else:
         length_score = len(predict_str) * 0.001

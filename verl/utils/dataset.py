@@ -413,14 +413,18 @@ class RLHFDataset(Dataset, ImageProcessMixin):
 
         # Set vision_path to a nonempty vision path
         # Or empty if both vision paths are empty
-        vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict['videos']
+        vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict.get('videos', [])
         ts_path = row_dict.get('time-series', [])
         if ts_path is None:
             ts_path = []
 
-        if len(vision_path) != 0 and ts_path and len(ts_path) != 0:
+
+        if 'How long will the patient stay in the hospital?' in prompt_str:
             row_dict["data_source"] = "multimodal"
-            row_dict["dataset"] = "mimic"
+            row_dict["dataset"] = "los_prediction"
+        elif 'Will the patient survive for at least 48 hours?' in prompt_str:
+            row_dict["data_source"] = "multimodal"
+            row_dict["dataset"] = "48_ihm"
         elif len(vision_path) != 0:
             vision_path = vision_path[0]
             row_dict["data_source"] = vision_path.split("/")[0]
@@ -430,6 +434,10 @@ class RLHFDataset(Dataset, ImageProcessMixin):
             # dataset already set in json
         else:
             raise ValueError("No modality found.")
+
+        if len(vision_path) == 0 and len(ts_path) > 0:
+            vision_path = ts_path
+        row_dict['vision_path'] = vision_path
 
         if self.image_key in row_dict and row_dict["images"]:
             for i, image_item in enumerate(row_dict["images"]):
@@ -513,6 +521,8 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                     logger.error(
                         f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
                     logger.error(traceback.format_exc())
+                    time_series = torch.zeros((8, 2500), dtype=torch.float32)
+                    processed_time_series.append(time_series)
         else:
             time_series = torch.zeros((8, 2500), dtype=torch.float32)
             processed_time_series.append(time_series)

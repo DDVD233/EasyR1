@@ -275,7 +275,8 @@ class FSDPWorker(Worker):
             model.model.embed_tokens.requires_grad_(False)
             model.model.layers.requires_grad_(False)
             model.model.norm.requires_grad_(False)
-            model.lm_head.requires_grad_(False) 
+            model.lm_head.requires_grad_(False)
+            fsdp_config.use_orig_params = True
             print('LLM is freezed')
 
         if model_config.freeze_time_series_encoder:

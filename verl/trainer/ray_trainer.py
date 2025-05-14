@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from enum import Enum, IntEnum, auto
 from typing import Any, Dict, List, Optional, Type
 
+import numpy
 import numpy as np
 import ray
 import torch
@@ -279,19 +280,38 @@ class RayPPOTrainer:
         # self.scaler = DomainScaler()
 
     def _maybe_log_val_generations(
-        self, inputs: List[str], outputs: List[str], labels: List[str], scores: List[float]
+        self, inputs: List[str], outputs: List[str], labels: List[str], scores: List[float],
+            datasets: List[str], datapaths: List[str]
     ) -> None:
         """Log a table of validation samples"""
         if self.config.trainer.val_generations_to_log <= 0:
             return
 
         # Create tuples of (input, output, score) and sort by input text
-        samples = list(zip(inputs, outputs, labels, scores))
-        samples.sort(key=lambda x: x[0])  # Sort by input text
+        # samples = list(zip(inputs, outputs, labels, scores))
+        samples = []
+        samples_dict = []
+        for i in range(len(inputs)):
+            inputs_full = f"Dataset: {datasets[i]} \nDatapath: {datapaths[i]} \n{inputs[i]}"
+            samples.append((inputs_full, outputs[i], labels[i], scores[i]))
+            samples_dict.append({
+                "input": inputs_full,
+                "output": outputs[i],
+                "label": labels[i],
+                "score": scores[i],
+            })
+        samples.sort(key=lambda x: x[3], reverse=True)  # Sort by scores in descending order
+        samples_dict.sort(key=lambda x: x["score"], reverse=True)
+
+        # also save it to a json file by formatting it as dict
+        with open(f"val_generations_{self.global_step}.json", "w") as f:
+            import json
+            json.dump(samples_dict, f, indent=4)
+
 
         # Use fixed random seed for deterministic shuffling
-        rng = np.random.RandomState(42)
-        rng.shuffle(samples)
+        # rng = np.random.RandomState(42)
+        # rng.shuffle(samples)
 
         samples = samples[: self.config.trainer.val_generations_to_log]
         self.logger.log_generation(samples, self.global_step)
@@ -301,6 +321,7 @@ class RayPPOTrainer:
         reward_metrics_lst = defaultdict(list)
         # Lists to collect samples for the table
         sample_inputs, sample_outputs, sample_labels, sample_scores = [], [], [], []
+        sample_datasets, sample_datapaths = [], []
 
         # New lists for metric calculation
         all_predictions = []
@@ -319,6 +340,11 @@ class RayPPOTrainer:
             ground_truths = test_batch.non_tensor_batch["answer"]
             data_sources = test_batch.non_tensor_batch.get("data_source", ["unknown"] * len(input_texts))
             datasets = test_batch.non_tensor_batch.get("dataset", ["unknown"] * len(input_texts))
+            data_paths = test_batch.non_tensor_batch.get("vision_path", ["unknown"] * len(input_texts))
+            if isinstance(data_paths, numpy.ndarray):
+                data_paths = data_paths.tolist()
+            sample_datapaths.extend(data_paths)
+            sample_datasets.extend(datasets)
 
             if "multi_modal_data" in test_batch.non_tensor_batch.keys():
                 test_gen_batch = test_batch.pop(
@@ -385,7 +411,8 @@ class RayPPOTrainer:
         metric_dict.update(**metrics)
         wandb.log(metric_dict, step=self.global_step)
 
-        self._maybe_log_val_generations(sample_inputs, sample_outputs, sample_labels, sample_scores)
+        self._maybe_log_val_generations(sample_inputs, sample_outputs, sample_labels, sample_scores,
+                                        sample_datasets, sample_datapaths)
         reward_score = torch.cat(reward_tensor_lst, dim=0).sum(-1).mean().item()
         val_reward_metrics = {f"val/{key}_reward": value for key, value in reduce_metrics(reward_metrics_lst).items()}
         return {"val/reward_score": reward_score, **val_reward_metrics}
@@ -549,8 +576,8 @@ class RayPPOTrainer:
 
                 metrics, timing_raw = {}, {}
                 # print key, value type
-                for key, value in batch_dict.items():
-                    print(f"{key}: {type(value)}")
+                # for key, value in batch_dict.items():
+                #     print(f"{key}: {type(value)}")
                 batch: DataProto = DataProto.from_single_dict(batch_dict)
 
                 # pop those keys for generation
