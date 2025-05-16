@@ -1,5 +1,9 @@
 import ujson
+from black.trans import defaultdict
+
 from evaluation import compute_metrics_by_data_source
+from medical import medical_compute_score
+import random
 
 
 def eval_via_file(file_path):
@@ -20,7 +24,6 @@ def eval_via_file(file_path):
 
     # Compute metrics
     metrics = compute_metrics_by_data_source(predictions, ground_truths, data_sources, datasets)
-    print(metrics)
 
 if __name__ == '__main__':
-    eval_via_file('gpt-4o_results.json')
+    eval_via_file('results/o4-mini_results.json')

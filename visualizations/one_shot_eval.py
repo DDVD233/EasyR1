@@ -18,6 +18,8 @@ data = pd.DataFrame([
     ["QvQ-Med", 0.691, 0.707, 0.580, 0.765, 0.707, 0.759, 0.568, 0.806, 0.670],
     ["Med-R1", 0.641, 0.630, 0.530, 0.0, 0.659, 0.596, 0.549, 0.550, 0.671],
     ["LLaVa-Med", 0.088, 0.466, 0.448, 0.0, 0.000, 0.049, 0.448, 0.363, 0.434],
+    ["o4-mini", 0.198, 0.467, 0.441, 0.0, 0.514, 0.297, 0.267, 0.725, 0.378],
+    ["GPT-4o", 0.261, 0.442, 0.222, 0.0, 0.575, 0.036, 0.244, 0.896, 0.401],
 ], columns=["Model", "CXR", "Dermoscopy", "CT Scan", "ECG", "Pathology", "Mammo",
             "Ultrasound", "MRI", "Fundus"])
 
@@ -49,7 +51,7 @@ fig.update_layout(
     polar=dict(
         radialaxis=dict(
             visible=True,
-            range=[0. , 0.81],
+            range=[0. , 0.9],
             showline=False,
             tickfont=dict(size=32),
             dtick=0.2,

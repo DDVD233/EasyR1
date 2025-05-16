@@ -94,9 +94,6 @@ for dataset in drpo_acc:
 # Sort differences in descending order
 sorted_differences = dict(sorted(differences.items(), key=lambda x: x[1], reverse=True))
 
-# Filter out datasets with absolute difference < 0.01
-# sorted_differences = {k: v for k, v in sorted_differences.items() if abs(v) >= 0.01}
-
 # Filter for positive differences (where multitask performs better)
 positive_differences = {k: v for k, v in sorted_differences.items() if k not in ['CMMD']}
 

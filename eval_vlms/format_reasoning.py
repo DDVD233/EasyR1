@@ -28,7 +28,9 @@ def format_reasoning():
         modalities.append(modality)
         label = item['label']
         reasoning_trace = item['output'].replace("\n", "").split("<think>")[1].split("</think>")[0]
-        formatted_data.append((f"ID-{important_ids[fill_index]:03d}", f"\"Question: {question} Ground Truth Label: {label} \nReasoning to annotate: {reasoning_trace}\""))
+        data_path = item['input'].split("Datapath: ")[1].split(" \n")[0]
+        prediction = item['output'].split("\\boxed{")[1].split("}")[0]
+        formatted_data.append((f"ID-{important_ids[fill_index]:03d}", data_path, prediction, label, f"\"Question: {question} Ground Truth Label: {label} \nReasoning to annotate: {reasoning_trace}\""))
         fill_index += 1
         if fill_index >= len(important_ids):
             break
@@ -45,14 +47,22 @@ def format_reasoning():
         question = item['input'].split("user\n")[1].split("You FIRST think")[0]
         label = item['label']
         reasoning_trace = item['output'].replace("\n", "").split("<think>")[1].split("</think>")[0]
-        formatted_data.append((f"ID-{index:03d}", f"\"Question: {question} Ground Truth Label: {label} \nReasoning to annotate: {reasoning_trace}\""))
+        data_path = item['input'].split("Datapath: ")[1].split(" \n")[0]
+        try:
+            prediction = item['output'].split("\\boxed{")[1].split("}")[0]
+        except:
+            prediction = ""
+        formatted_data.append((f"ID-{index:03d}", data_path, prediction, label, f"\"Question: {question} Ground Truth Label: {label} \nReasoning to annotate: {reasoning_trace}\""))
         index += 1
 
     # save as annotation.csv with two columns: origin and content
     with open("annotation.csv", 'w') as f:
         f.write("origin,content\n")
         for item in formatted_data:
-            f.write(f"{item[0]},{item[1]}\n")
+            f.write(f"{item[0]},{item[1]},{item[2]},{item[3]},{item[4]}\n")
+
+    with open("annotation.json", 'w') as f:
+        json.dump(formatted_data, f, indent=4)
 
 
 if __name__ == '__main__':
