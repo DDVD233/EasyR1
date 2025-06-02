@@ -1,5 +1,5 @@
 data:
-  train_files: /scratch/high_modality/geom_train.jsonl
+  train_files: /scratch/high_modality/geom_train_upsampled.jsonl
   val_files: /scratch/high_modality/geom_valid_mini.jsonl
   prompt_key: problem
   answer_key: answer
