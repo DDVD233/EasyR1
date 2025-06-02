@@ -6,7 +6,7 @@ import time
 from moviepy.video.fx.margin import margin
 
 # Define the color palette from your template
-colors = ["#da81c1", "#7dbfa7", "#b0d766", "#8ca0cb", "#ee946c"]
+colors = ["#da81c1", "#7dbfa7", "#b0d766", "#8ca0cb", "#ee946c", "#da81c1"]
 
 # https://github.com/plotly/plotly.py/issues/3469
 fig = px.scatter(x=[0, 1, 2, 3, 4], y=[0, 1, 4, 9, 16])
@@ -15,7 +15,8 @@ time.sleep(1)
 
 # Create the data with reversed order
 data = pd.DataFrame([
-    ["QvQ-Med", 0.691, 0.707, 0.580, 0.765, 0.707, 0.759, 0.568, 0.806, 0.670],
+    ["QoQ-Med-32B", 0.732, 0.661, 0.571, 0.765, 0.726, 0.758, 0.609, 0.904, 0.691],
+    # ["QvQ-Med-7B", 0.691, 0.707, 0.580, 0.765, 0.707, 0.759, 0.568, 0.806, 0.670],
     ["Med-R1", 0.641, 0.630, 0.530, 0.0, 0.659, 0.596, 0.549, 0.550, 0.671],
     ["LLaVa-Med", 0.088, 0.466, 0.448, 0.0, 0.000, 0.049, 0.448, 0.363, 0.434],
     ["o4-mini", 0.198, 0.467, 0.441, 0.0, 0.514, 0.297, 0.267, 0.725, 0.378],
@@ -51,7 +52,7 @@ fig.update_layout(
     polar=dict(
         radialaxis=dict(
             visible=True,
-            range=[0. , 0.9],
+            range=[0. , 0.92],
             showline=False,
             tickfont=dict(size=32),
             dtick=0.2,
