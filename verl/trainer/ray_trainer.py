@@ -327,6 +327,7 @@ class RayPPOTrainer:
         all_predictions = []
         all_ground_truths = []
         all_data_sources = []
+        all_demographics = []
         all_datasets = []
         data_source_lst = []
 
@@ -340,8 +341,9 @@ class RayPPOTrainer:
             ground_truths = test_batch.non_tensor_batch["answer"]
             data_sources = test_batch.non_tensor_batch.get("data_source", ["unknown"] * len(input_texts))
             datasets = test_batch.non_tensor_batch.get("dataset", ["unknown"] * len(input_texts))
+            demographics = test_batch.non_tensor_batch.get("demo", ["unknown"] * len(input_texts))
             data_paths = test_batch.non_tensor_batch.get("vision_path", ["unknown"] * len(input_texts))
-            if isinstance(data_paths, numpy.ndarray):
+            if isinstance(data_paths, np.ndarray):
                 data_paths = data_paths.tolist()
             sample_datapaths.extend(data_paths)
             sample_datasets.extend(datasets)
@@ -373,6 +375,7 @@ class RayPPOTrainer:
             all_ground_truths.extend(ground_truths)
             all_data_sources.extend(data_sources)
             all_datasets.extend(datasets)
+            all_demographics.extend(demographics)
 
             test_batch = test_batch.union(test_output_gen_batch)
 
@@ -407,7 +410,7 @@ class RayPPOTrainer:
 
         # Per data source metrics
         metrics = compute_metrics_by_data_source(all_predictions, all_ground_truths,
-                                                 all_data_sources, all_datasets)
+                                                 all_data_sources, all_datasets, all_demographics)
         metric_dict.update(**metrics)
         wandb.log(metric_dict, step=self.global_step)
 

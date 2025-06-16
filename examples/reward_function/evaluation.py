@@ -214,7 +214,8 @@ def compute_metrics_by_data_source(
         predictions: List[str],
         ground_truths: List[str],
         data_sources: List[str],
-        datasets: List[str]
+        datasets: List[str],
+        demographics: List[str]
 ) -> Dict[str, float]:
     """
     Compute hierarchical metrics: class -> dataset -> data source -> global.
@@ -224,6 +225,7 @@ def compute_metrics_by_data_source(
         ground_truths (List[str]): List of ground truth labels.
         data_sources (List[str]): List of data sources for each example.
         datasets (List[str]): List of dataset identifiers for each example.
+        demographics (List[str]): List of demographic information for each example.
 
     Returns:
         Dict[str, float]: Flattened dictionary of metrics at all levels with keys:
