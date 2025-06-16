@@ -414,20 +414,25 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         # Set vision_path to a nonempty vision path
         # Or empty if both vision paths are empty
         vision_path = row_dict['images'] if len(row_dict['images']) != 0 else row_dict['videos']
-        ts_path = row_dict['time-series']
+        ts_path = row_dict['time-series'] if 'time-series' in row_dict and row_dict['time-series'] else ''
+        row_dict = row_dict['demo'] if 'demo' in row_dict else "unknown"
 
-        if len(vision_path) != 0 and ts_path and len(ts_path) != 0:
-            row_dict["data_source"] = "multimodal"
-            row_dict["dataset"] = "mimic"
-        elif len(vision_path) != 0:
-            vision_path = vision_path[0]
-            row_dict["data_source"] = vision_path.split("/")[0]
-            row_dict["dataset"] = vision_path.split("/")[1]
-        elif ts_path and len(ts_path) != 0:
-            row_dict["data_source"] = "ecg"
-            # dataset already set in json
-        else:
-            raise ValueError("No modality found.")
+        try:
+            if len(vision_path) != 0 and ts_path and len(ts_path) != 0:
+                row_dict["data_source"] = "multimodal"
+                row_dict["dataset"] = "mimic"
+            elif len(vision_path) != 0:
+                vision_path = vision_path[0]
+                row_dict["data_source"] = vision_path.split("/")[0]
+                row_dict["dataset"] = vision_path.split("/")[1]
+            elif ts_path and len(ts_path) != 0:
+                row_dict["data_source"] = "ecg"
+                # dataset already set in json
+            else:
+                raise ValueError("No modality found.")
+        except:
+            row_dict["data_source"] = "unknown"
+            row_dict["dataset"] = "unknown"
         
         if self.image_key in row_dict and row_dict["images"]:
             for i, image_item in enumerate(row_dict["images"]):
