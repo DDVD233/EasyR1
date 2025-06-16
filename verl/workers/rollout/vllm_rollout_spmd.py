@@ -38,8 +38,11 @@ from .config import RolloutConfig
 #     TimeSeriesQwen2_5_VLForConditionalGeneration
 # )
 
-from ...models.monkey_patch import time_series_vllm_patch
-time_series_vllm_patch()
+try:
+    from ...models.monkey_patch import time_series_vllm_patch
+    time_series_vllm_patch()
+except Exception as e:
+    print(f"Failed to apply time series vllm patch. Error: {e}")
 
 def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, List[Any]]:
     if isinstance(value, torch.Tensor):
@@ -91,7 +94,10 @@ class vLLMRollout(BaseRollout):
             disable_log_stats=config.disable_log_stats,
             enforce_eager=config.enforce_eager,
             disable_custom_all_reduce=True,
-            limit_mm_per_prompt={"image": config.limit_images} if config.limit_images > 0 else None,
+            limit_mm_per_prompt={
+                "image": config.limit_images,
+                "time-series": 50,
+            } if config.limit_images > 0 else None,
             disable_mm_preprocessor_cache=True,
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_sleep_mode=True,

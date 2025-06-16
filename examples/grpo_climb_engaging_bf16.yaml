@@ -6,8 +6,8 @@ data:
   image_key: images
   max_prompt_length: 4000
   max_response_length: 4000
-  rollout_batch_size: 512
-  val_batch_size: 1024
+  rollout_batch_size: 256
+  val_batch_size: 512
   format_prompt: ./examples/format_prompt/medical_format.jinja
   shuffle: true
   seed: 1
@@ -20,7 +20,7 @@ algorithm:
   disable_kl: false
   use_kl_loss: true
   kl_penalty: low_var_kl
-  kl_coef: 1.0e-4
+  kl_coef: 1.0e-6
 
 worker:
   actor:
@@ -44,6 +44,7 @@ worker:
       enable_full_shard: true
       enable_cpu_offload: false
       enable_rank0_init: true
+      torch_dtype: bf16
     offload:
       offload_params: true  # true: more CPU memory; false: more GPU memory
       offload_optimizer: true  # true: more CPU memory; false: more GPU memory
@@ -52,7 +53,7 @@ worker:
     n: 5
     temperature: 1.0
     top_p: 0.99
-    gpu_memory_utilization: 0.6
+    gpu_memory_utilization: 0.4
     enforce_eager: false
     enable_chunked_prefill: false
     tensor_parallel_size: 4
@@ -76,16 +77,16 @@ worker:
 
 trainer:
   total_episodes: 3
-  logger: ["console", "wandb", "file"]
+  logger: ["console", "wandb"]
   project_name: easy_r1
   experiment_name: qwen2_5_7b_math_grpo
   n_gpus_per_node: 8
   nnodes: 1
   val_freq: 5  # -1 to disable
-  val_before_train: true
+  val_before_train: false
   val_only: false
   val_generations_to_log: 3
-  save_freq: 50  # -1 to disable
-  save_limit: 3  # -1 to disable
+  save_freq: 10  # -1 to disable
+  save_limit: -1  # -1 to disable
   save_checkpoint_path: null
   load_checkpoint_path: null

@@ -158,6 +158,7 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
             
             # Handle time series inputs (new addition)
             if time_series_data is not None:
+                print("Embedding time series data...")
                 time_series_embeds = self.time_series_embedding(time_series_data)
                 
                 mask = input_ids == self.config.time_series_token_id

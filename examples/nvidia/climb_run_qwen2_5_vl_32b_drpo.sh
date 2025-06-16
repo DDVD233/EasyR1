@@ -10,4 +10,5 @@ python -m verl.trainer.main \
     worker.actor.model.model_path=Qwen/Qwen2.5-VL-32B-Instruct \
     trainer.n_gpus_per_node=8 \
     worker.rollout.tensor_parallel_size=8 \
+    worker.actor.optim.lr=5e-5 \
     trainer.experiment_name=drpo_32b_nvidia

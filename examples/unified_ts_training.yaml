@@ -78,7 +78,7 @@ worker:
     reward_function: ./examples/reward_function/medical.py:medical_compute_score
 
 trainer:
-  total_epochs: 3
+  total_episodes: 3
   logger: ["console", "wandb", "file"]
   project_name: easy_r1
   experiment_name: unified_ts_no_freeze
