@@ -283,17 +283,17 @@ class RLHFDataset(Dataset, ImageProcessMixin):
     """
 
     def __init__(
-            self,
-            data_path: str,
-            tokenizer: PreTrainedTokenizer,
-            processor: Optional[ProcessorMixin],
-            prompt_key: str = "prompt",
-            answer_key: str = "answer",
-            image_key: str = "images",
+        self,
+        data_path: str,
+        tokenizer: PreTrainedTokenizer,
+        processor: Optional[ProcessorMixin],
+        prompt_key: str = "prompt",
+        answer_key: str = "answer",
+        image_key: str = "images",
             time_series_key: str = "time-series",
-            max_prompt_length: int = 1024,
-            truncation: str = "error",
-            format_prompt: Optional[str] = None,
+        max_prompt_length: int = 1024,
+        truncation: str = "error",
+        format_prompt: Optional[str] = None,
             max_pixels: Optional[int] = None,
             min_pixels: Optional[int] = None,
             video_frames=2,
@@ -417,23 +417,27 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         ts_path = row_dict.get('time-series', [])
         if ts_path is None:
             ts_path = []
+        row_dict = row_dict['demo'] if 'demo' in row_dict else "unknown"
 
-
-        if 'How long will the patient stay in the hospital?' in prompt_str:
-            row_dict["data_source"] = "multimodal"
-            row_dict["dataset"] = "los_prediction"
-        elif 'Will the patient survive for at least 48 hours?' in prompt_str:
-            row_dict["data_source"] = "multimodal"
-            row_dict["dataset"] = "48_ihm"
-        elif len(vision_path) != 0:
-            vision_path = vision_path[0]
-            row_dict["data_source"] = vision_path.split("/")[0]
-            row_dict["dataset"] = vision_path.split("/")[1]
-        elif ts_path and len(ts_path) != 0:
-            row_dict["data_source"] = "ecg"
-            # dataset already set in json
-        else:
-            raise ValueError("No modality found.")
+        try:
+            if 'How long will the patient stay in the hospital?' in prompt_str:
+                row_dict["data_source"] = "multimodal"
+                row_dict["dataset"] = "los_prediction"
+            elif 'Will the patient survive for at least 48 hours?' in prompt_str:
+                row_dict["data_source"] = "multimodal"
+                row_dict["dataset"] = "48_ihm"
+            elif len(vision_path) != 0:
+                vision_path = vision_path[0]
+                row_dict["data_source"] = vision_path.split("/")[0]
+                row_dict["dataset"] = vision_path.split("/")[1]
+            elif ts_path and len(ts_path) != 0:
+                row_dict["data_source"] = "ecg"
+                # dataset already set in json
+            else:
+                raise ValueError("No modality found.")
+        except:
+            row_dict["data_source"] = "unknown"
+            row_dict["dataset"] = "unknown"
 
         if len(vision_path) == 0 and len(ts_path) > 0:
             vision_path = ts_path
