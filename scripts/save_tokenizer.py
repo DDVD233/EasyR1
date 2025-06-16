@@ -21,14 +21,14 @@ def save_qwen25_processor(output_path):
     try:
         # tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", use_fast=True)
         # tokenizer.save_pretrained(output_path)
-        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", use_fast=True)
+        processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-32B-Instruct", use_fast=True)
         processor.save_pretrained(output_path)
         logger.info(f"Saved fast tokenizer to {output_path}")
     except Exception as e:
         logger.warning(f"Error saving fast tokenizer: {e}")
         # Fall back to slow tokenizer if fast version fails
         try:
-            tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", use_fast=False)
+            tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-VL-32B-Instruct", use_fast=False)
             tokenizer.save_pretrained(output_path)
             logger.info(f"Saved slow tokenizer to {output_path}")
         except Exception as e:
@@ -40,4 +40,4 @@ def save_qwen25_processor(output_path):
 
 
 if __name__ == "__main__":
-    save_qwen25_processor('/scratch/outputs/qwen/qwen25_vision_model')
+    save_qwen25_processor('/scratch/outputs/QoQ-Med-VL-32B')

@@ -651,7 +651,7 @@ with right_col:
             st.rerun()
 
     # For debugging purposes, let's add a file path check
-    jsonl_path = "/mnt/8T/high_modality/geom_valid_sampled.jsonl"
+    jsonl_path = "/scratch/high_modality/geom_valid_sampled.jsonl"
 
     # Fallback to a sample if needed
     sample_data = [
@@ -719,7 +719,7 @@ with right_col:
 
                     # Get the image path
                     try:
-                        img_path = os.path.join("/mnt/8T/high_modality", sample["images"][0])
+                        img_path = os.path.join("/scratch/high_modality", sample["images"][0])
                         if not os.path.exists(img_path):
                             img_path = test_image_path
                     except (KeyError, IndexError):

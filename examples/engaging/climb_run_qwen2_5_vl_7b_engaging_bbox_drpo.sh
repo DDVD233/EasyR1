@@ -5,6 +5,6 @@ set -x
 python -m verl.trainer.main \
     config=examples/grpo_climb_engaging.yaml \
     algorithm.adv_estimator=drpo \
-    worker.actor.model.model_path=Qwen/Qwen2.5-VL-7B-Instruct \
+    worker.actor.model.model_path=ddvd233/QoQ-Med-VL-7B \
     trainer.n_gpus_per_node=4 \
     trainer.experiment_name=drpo_vanilla
