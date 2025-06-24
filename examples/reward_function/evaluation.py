@@ -91,6 +91,150 @@ def compute_class_metrics(class_name: str, confusion_matrix: Dict[str, int]) -> 
             "tn": tn
         }
     }
+def gender(
+    predictions: List[str],
+    ground_truths: List[str],
+    demographics: List[str]
+) -> Dict[str, float]:
+
+
+    groups = {
+        "male": {"preds": [], "gts": []},
+        "female": {"preds": [], "gts": []}
+    }
+
+    for pred, gt, demo in zip(predictions, ground_truths, demographics):
+        if "male" in demo.lower():
+            groups["male"]["preds"].append(pred)
+            groups["male"]["gts"].append(gt)
+        elif "female" in demo.lower():
+            groups["female"]["preds"].append(pred)
+            groups["female"]["gts"].append(gt)
+
+    results = {}
+
+    for sex in ["male", "female"]:
+        preds = groups[sex]["preds"]
+        gts = groups[sex]["gts"]
+        if len(preds) == 0:
+            continue
+        metrics = compute_dataset_metrics(preds, gts)["dataset_metrics"]
+        results[f"{sex}/accuracy"] = metrics["accuracy"]
+        results[f"{sex}/f1"] = metrics["f1"]
+
+    if "male/accuracy" in results and "female/accuracy" in results:
+        results["acc_diff"] = abs(results["male/accuracy"] - results["female/accuracy"])
+    if "male/f1" in results and "female/f1" in results:
+        results["f1_diff"] = abs(results["male/f1"] - results["female/f1"])
+
+    return results
+
+def parent(
+    predictions: List[str],
+    ground_truths: List[str],
+    demographics: List[str]
+) -> Dict[str, float]:
+
+    groups = {}
+    for pred, gt, demo in zip(predictions, ground_truths, demographics):
+        if "father" in demo.lower():
+            if demo.split("father:")[1].strip().split()[0] not in groups:
+                groups[demo.split("father:")[1].strip().split()[0]] = {"preds": [], "gts": []}
+                groups[demo.split("father:")[1].strip().split()[0]]["preds"].append(pred)
+                groups[demo.split("father:")[1].strip().split()[0]]["gts"].append(gt)
+        elif "mother" in demo.lower():
+            if demo.split("mother:")[1].strip().split()[0] not in groups:
+                groups[demo.split("mother:")[1].strip().split()[0]] = {"preds": [], "gts": []}
+                groups[demo.split("mother:")[1].strip().split()[0]]["preds"].append(pred)
+                groups[demo.split("mother:")[1].strip().split()[0]]["gts"].append(gt)
+
+    results = {}
+    acc_values = []
+    f1_values = []
+
+    for race in groups:
+        preds = groups[race]["preds"]
+        gts = groups[race]["gts"]
+        if len(preds) == 0:
+            continue
+        metrics = compute_dataset_metrics(preds, gts)["dataset_metrics"]
+        acc = metrics["accuracy"]
+        f1 = metrics["f1"]
+        results[f"{race}/accuracy"] = acc
+        results[f"{race}/f1"] = f1
+        acc_values.append(acc)
+        f1_values.append(f1)
+        print(f"{race}: accuracy = {acc:.4f}, f1 = {f1:.4f}")
+
+    if len(acc_values) >= 2:
+        acc_diff = max(acc_values) - min(acc_values)
+        results["acc_diff"] = acc_diff
+        print(f"Accuracy max diff = {acc_diff:.4f}")
+
+    if len(f1_values) >= 2:
+        f1_diff = max(f1_values) - min(f1_values)
+        results["f1_diff"] = f1_diff
+        print(f"F1 max diff = {f1_diff:.4f}")
+
+    return results
+
+
+def age(
+    predictions: List[str],
+    ground_truths: List[str],
+    demographics: List[str]
+) -> Dict[str, float]:
+
+
+    groups = {
+        "a1": {"preds": [], "gts": []},
+        "a2": {"preds": [], "gts": []},
+        "a3": {"preds": [], "gts": []},
+        "a4": {"preds": [], "gts": []},
+    }
+
+    for pred, gt, demo in zip(predictions, ground_truths, demographics):
+        if "age" in demo.lower():
+            if float(demo.split("age:")[1].strip().split()[0]) <= 25:
+                groups["a1"]["preds"].append(pred)
+                groups["a1"]["gts"].append(gt)
+            elif 35 < float(demo.split("age:")[1].strip().split()[0]) <= 50:
+                groups["a2"]["preds"].append(pred)
+                groups["a2"]["gts"].append(gt)
+            elif 51 < float(demo.split("age:")[1].strip().split()[0]) <= 75:
+                groups["a3"]["preds"].append(pred)
+                groups["a3"]["gts"].append(gt)
+            elif 75 < float(demo.split("age:")[1].strip().split()[0]):
+                groups["a4"]["preds"].append(pred)
+                groups["a4"]["gts"].append(gt)
+
+
+    results = {}
+
+    for group in ["a1", "a2", "a3", "a4"]:
+        preds = groups[group]["preds"]
+        gts = groups[group]["gts"]
+        if len(preds) == 0:
+            continue
+        metrics = compute_dataset_metrics(preds, gts)["dataset_metrics"]
+        results[f"{group}/accuracy"] = metrics["accuracy"]
+        results[f"{group}/f1"] = metrics["f1"]
+
+    acc_keys = [k for k in results if k.endswith("/accuracy")]
+    f1_keys = [k for k in results if k.endswith("/f1")]
+
+    if len(acc_keys) >= 2:
+        acc_values = [results[k] for k in acc_keys]
+        results["acc_diff"] = max(acc_values) - min(acc_values)
+
+    if len(f1_keys) >= 2:
+        f1_values = [results[k] for k in f1_keys]
+        results["f1_diff"] = max(f1_values) - min(f1_values)
+    for group in ["a1", "a2", "a3", "a4"]:
+        acc = results.get(f"{group}/accuracy")
+        f1 = results.get(f"{group}/f1")
+        if acc is not None and f1 is not None:
+            print(f"{group}: accuracy = {acc:.4f}, f1 = {f1:.4f}")
 
 
 def compute_confusion_matrices(predictions: List[str], ground_truths: List[str]) -> Dict[str, Dict[str, int]]:
@@ -313,5 +457,124 @@ def compute_metrics_by_data_source(
         # Store global metrics with the format "val/metric"
         for metric_name, metric_value in global_metrics.items():
             result[f"val/{metric_name}"] = metric_value
+
+    return result
+
+
+def compute_metrics_by_data_source(
+        predictions: List[str],
+        ground_truths: List[str],
+        data_sources: List[str],
+        datasets: List[str],
+        demographics: List[str]
+) -> Dict[str, float]:
+    """
+    Compute hierarchical metrics: class -> dataset -> data source -> global.
+
+    Args:
+        predictions (List[str]): List of model predictions.
+        ground_truths (List[str]): List of ground truth labels.
+        data_sources (List[str]): List of data sources for each example.
+        datasets (List[str]): List of dataset identifiers for each example.
+        demographics (List[str]): List of demographic information for each example.
+
+    Returns:
+        Dict[str, float]: Flattened dictionary of metrics at all levels with keys:
+            - "val/{metric}" for global metrics
+            - "{data_source}/{metric}" for data source metrics
+            - "{data_source}/{dataset}/{metric}" for dataset metrics
+    """
+    # Group examples by data source and dataset
+    grouped_data = defaultdict(lambda: defaultdict(lambda: {"preds": [], "gts": []}))
+
+    for pred, gt, source, dataset in zip(predictions, ground_truths, data_sources, datasets):
+        grouped_data[source][dataset]["preds"].append(pred)
+        grouped_data[source][dataset]["gts"].append(gt)
+
+    # Initialize the flattened result dictionary
+    result = {}
+
+    # Initialize global metrics accumulators
+    global_metrics = {
+        "precision": 0.0,
+        "recall": 0.0,
+        "sensitivity": 0.0,
+        "specificity": 0.0,
+        "f1": 0.0,
+        "accuracy": 0.0
+    }
+
+    # Compute metrics for each dataset within each data source
+    total_data_sources = 0
+
+    for source_name, source_datasets in grouped_data.items():
+        # Initialize metrics accumulators for this data source
+        source_metrics = {
+            "precision": 0.0,
+            "recall": 0.0,
+            "sensitivity": 0.0,
+            "specificity": 0.0,
+            "f1": 0.0,
+            "accuracy": 0.0
+        }
+
+        total_datasets_in_source = 0
+
+        for dataset_name, dataset_data in source_datasets.items():
+            # Compute metrics for this dataset
+            dataset_result = compute_dataset_metrics(
+                dataset_data["preds"],
+                dataset_data["gts"]
+            )
+
+            # Store dataset-level metrics with the format "data_source/dataset/metric"
+            for metric_name, metric_value in dataset_result["dataset_metrics"].items():
+                result[f"{source_name}/{dataset_name}/{metric_name}"] = metric_value
+
+            # Skip empty datasets
+            if dataset_result["active_classes"] == 0:
+                continue
+
+            total_datasets_in_source += 1
+
+            # Accumulate metrics for data source average (equal dataset weighting)
+            for metric_name in source_metrics.keys():
+                source_metrics[metric_name] += dataset_result["dataset_metrics"][metric_name]
+
+        # Calculate data source average (equal dataset weighting)
+        if total_datasets_in_source > 0:
+            for metric_name in source_metrics.keys():
+                source_metrics[metric_name] /= total_datasets_in_source
+
+            # Store data source metrics with the format "data_source/metric"
+            for metric_name, metric_value in source_metrics.items():
+                result[f"{source_name}/{metric_name}"] = metric_value
+
+            total_data_sources += 1
+
+            # Accumulate for global metrics (equal data source weighting)
+            for metric_name in global_metrics.keys():
+                global_metrics[metric_name] += source_metrics[metric_name]
+
+    # Calculate global average (equal data source weighting)
+    if total_data_sources > 0:
+        for metric_name in global_metrics.keys():
+            global_metrics[metric_name] /= total_data_sources
+
+        # Store global metrics with the format "val/metric"
+        for metric_name, metric_value in global_metrics.items():
+            result[f"val/{metric_name}"] = metric_value
+
+    gender_results = gender(predictions, ground_truths, demographics)
+    for k, v in gender_results.items():
+        result[f"fairness/gender/{k}"] = v
+
+    age_results = age(predictions, ground_truths, demographics)
+    for k, v in age_results.items():
+        result[f"fairness/age/{k}"] = v
+
+    parent_results = parent(predictions, ground_truths, demographics)
+    for k, v in parent_results.items():
+        result[f"fairness/parent/{k}"] = v
 
     return result
