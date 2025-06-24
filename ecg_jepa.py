@@ -212,7 +212,7 @@ class MaskTransformer(nn.Module):
         self.mask_type = mask_type
         # initialize the learnable token
         # trunc_normal_(self.mask_token, std=init_std)
-        self.apply(self._init_weights)
+        self.apply(self._initialize_weights)
         self.fix_init_weight()
 
     def fix_init_weight(self):
@@ -223,7 +223,7 @@ class MaskTransformer(nn.Module):
             rescale(layer.attn.proj.weight.data, layer_id + 1)
             rescale(layer.mlp.fc2.weight.data, layer_id + 1)
 
-    def _init_weights(self, m):
+    def _initialize_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=self.init_std)
             if isinstance(m, nn.Linear) and m.bias is not None:

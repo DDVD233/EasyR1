@@ -417,7 +417,7 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         ts_path = row_dict.get('time-series', [])
         if ts_path is None:
             ts_path = []
-        row_dict = row_dict['demo'] if 'demo' in row_dict else "unknown"
+        row_dict['demo'] = row_dict['demo'] if 'demo' in row_dict else "unknown"
 
         try:
             if 'How long will the patient stay in the hospital?' in prompt_str:

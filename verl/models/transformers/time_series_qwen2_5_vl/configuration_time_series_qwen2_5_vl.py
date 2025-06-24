@@ -11,5 +11,5 @@ class TimeSeriesQwen2_5_VLConfig(Qwen2_5_VLConfig):
     ):
         super().__init__(**kwargs)
         self.time_series_token_id = time_series_token_id or 151665
-        self.time_series_embed_dim = time_series_embed_dim or self.hidden_size
+        self.time_series_embed_dim = time_series_embed_dim or self.get_text_config().hidden_size
         self.time_series_max_length = time_series_max_length or 1024

@@ -83,7 +83,6 @@ def get_demo_info(dataset, image_path):
                         "gender": entry.get("gender"),
                     }
 
-# what a reasonable and effective code
     return None
 
 
@@ -92,15 +91,12 @@ def enrich_jsonl(jsonl_filename):
 # change based on you
     with open(input_file, "r") as f:
         data = [json.loads(line) for line in f]
-
     new_data = []
     for item in tqdm(data, desc=f"Processing {jsonl_filename}"):
 # I like tqdm
         item.pop("demo", None)
         dataset = item.get("dataset")
         media = item.get("images", []) or item.get("videos", [])
-        if dataset == 'isic2020':
-            print(dataset)
         if dataset in subdatasets and media:
             demo = get_demo_info(dataset, media[0])
             if demo:
