@@ -138,12 +138,12 @@ def parent(
     groups = {}
     for pred, gt, demo in zip(predictions, ground_truths, demographics):
         if "father" in demo.lower():
-            if demo.split("father:")[1].strip().split()[0] not in groups:
+            if demo.split("father:")[1].strip().split()[0] not in groups and demo.split("father:")[1].strip().split()[0] != "NAN":
                 groups[demo.split("father:")[1].strip().split()[0]] = {"preds": [], "gts": []}
                 groups[demo.split("father:")[1].strip().split()[0]]["preds"].append(pred)
                 groups[demo.split("father:")[1].strip().split()[0]]["gts"].append(gt)
         elif "mother" in demo.lower():
-            if demo.split("mother:")[1].strip().split()[0] not in groups:
+            if demo.split("mother:")[1].strip().split()[0] not in groups and demo.split("mother:")[1].strip().split()[0] != "NAN":
                 groups[demo.split("mother:")[1].strip().split()[0]] = {"preds": [], "gts": []}
                 groups[demo.split("mother:")[1].strip().split()[0]]["preds"].append(pred)
                 groups[demo.split("mother:")[1].strip().split()[0]]["gts"].append(gt)

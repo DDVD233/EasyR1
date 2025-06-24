@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig authType="PASSWORD" host="point.dd.works" id="1a3064ad-c2fc-4cc7-a3c2-38daaf0d8eb6" port="22" nameFormat="DESCRIPTIVE" username="dvd" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>

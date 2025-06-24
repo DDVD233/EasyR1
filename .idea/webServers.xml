@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="bc699628-0ef0-4045-8bf4-f495a9392958" name="point.dd.works">
+        <fileTransfer rootFolder="/home/dvd" accessType="SFTP" host="point.dd.works" port="22" sshConfigId="1a3064ad-c2fc-4cc7-a3c2-38daaf0d8eb6" sshConfig="dvd@point.dd.works:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
