@@ -79,6 +79,8 @@ class TimeSeriesQwen2_5_VLProcessor(Qwen2_5_VLProcessor):
                 Time series data to be processed. 
                 Expected shape: (batch_size, num_features, time_steps)
         """
+        # for i in range(len(text)):
+        #     text[i] = text[i].replace(self.time_series_token, self.time_series_token * 50, 1)
 
         # Process existing inputs
         batch_feature = super().__call__(
@@ -96,8 +98,6 @@ class TimeSeriesQwen2_5_VLProcessor(Qwen2_5_VLProcessor):
             
             # Add time series data to batch feature
             batch_feature.data['time_series_data'] = time_series_data
-
-
         
         return batch_feature
 
