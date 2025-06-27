@@ -459,11 +459,11 @@ class FSDPWorker(Worker):
                 images, videos = [], []
                 if "images" in multi_modal_data:
                     for image in multi_modal_data["images"]:
-                        images.append(process_image(image, min_pixels, max_pixels))
+                        images.append(image)
 
                 if "videos" in multi_modal_data:
                     for video in multi_modal_data["videos"]:
-                        videos.append(process_video(video, min_pixels, max_pixels, video_fps))
+                        videos.append(video)
 
                 if len(images) != 0:
                     # it's necessary to add `dict` to properly convert batch features to dict
