@@ -20,39 +20,28 @@ import numpy as np
 import torch
 import torch.distributed
 from tensordict import TensorDict
-from transformers import PreTrainedTokenizer
+from transformers import PreTrainedTokenizer, ProcessorMixin
 from vllm import LLM, RequestOutput, SamplingParams
 
 from ...protocol import DataProto
 from ...utils import torch_functional as VF
-from ...utils.tokenizer import get_processor
+from ...utils.dataset import process_image, process_video
 from ...utils.torch_dtypes import PrecisionType
 from .base import BaseRollout
 from .config import RolloutConfig
 
-# from vllm.model_executor.models.registry import ModelRegistry
-# from verl.models.transformers.vllm_qwen import TimeSeriesQwen2_5_VLForConditionalGeneration
 
-# ModelRegistry.register_model(
-#     "TimeSeriesQwen2_5_VLForConditionalGeneration",
-#     TimeSeriesQwen2_5_VLForConditionalGeneration
-# )
-
-try:
-    from ...models.monkey_patch import time_series_vllm_patch
-    time_series_vllm_patch()
-except Exception as e:
-    print(f"Failed to apply time series vllm patch. Error: {e}")
-
-def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, List[Any]]:
+def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, np.ndarray]:
+    # repeat the elements, supports both tensor and numpy array
     if isinstance(value, torch.Tensor):
         return value.repeat_interleave(repeats, dim=0)
     else:
         return np.repeat(value, repeats, axis=0)
 
 
-def _get_logit_bias(model_path: str, trust_remote_code: bool) -> Optional[Dict[int, float]]:
-    processor = get_processor(model_path, trust_remote_code=trust_remote_code, use_fast=True)
+def _get_logit_bias(processor: Optional[ProcessorMixin]) -> Optional[Dict[int, float]]:
+    # enforce vllm to not output image token
+    # TODO: add video token
     if processor is not None and hasattr(processor, "image_token"):
         image_token_id = processor.tokenizer.convert_tokens_to_ids(processor.image_token)
         return {image_token_id: -100}
@@ -60,8 +49,36 @@ def _get_logit_bias(model_path: str, trust_remote_code: bool) -> Optional[Dict[i
         return None
 
 
+def _process_multi_modal_data(
+    multi_modal_data: Dict[str, Any], min_pixels: int, max_pixels: int, video_fps: float
+) -> Dict[str, Any]:
+    # may convert image path to image object
+    images, videos = [], []
+    if "images" in multi_modal_data:
+        for image in multi_modal_data["images"]:
+            images.append(process_image(image, min_pixels, max_pixels))
+
+    if "videos" in multi_modal_data:
+        for video in multi_modal_data["videos"]:
+            videos.append(process_video(video, min_pixels, max_pixels, video_fps))
+
+    if len(images) != 0:
+        return {"image": images}
+
+    if len(videos) != 0:
+        return {"video": videos}
+
+    return None
+
+
 class vLLMRollout(BaseRollout):
-    def __init__(self, model_path: str, config: RolloutConfig, tokenizer: PreTrainedTokenizer):
+    def __init__(
+        self,
+        model_path: str,
+        config: RolloutConfig,
+        tokenizer: PreTrainedTokenizer,
+        processor: Optional[ProcessorMixin],
+    ):
         """A vLLM rollout. It requires the module is supported by the vllm.
 
         Args:
@@ -73,11 +90,18 @@ class vLLMRollout(BaseRollout):
         self.rank = int(os.getenv("RANK", "0"))
         self.config = config
         self.pad_token_id = tokenizer.pad_token_id
+        self.use_tqdm = (self.rank == 0) and (not config.disable_tqdm)
         if config.tensor_parallel_size > torch.distributed.get_world_size():
             raise ValueError("Tensor parallelism size should be less than world size.")
 
         if config.max_num_batched_tokens < config.prompt_length + config.response_length:
             raise ValueError("max_num_batched_tokens should be greater than prompt_length + response_length.")
+
+        engine_kwargs = {}
+        if processor is not None:  # only VLMs have processor
+            engine_kwargs["disable_mm_preprocessor_cache"] = True
+            if config.limit_images:
+                engine_kwargs["limit_mm_per_prompt"] = {"image": config.limit_images}
 
         self.inference_engine = LLM(
             model=model_path,
@@ -94,13 +118,9 @@ class vLLMRollout(BaseRollout):
             disable_log_stats=config.disable_log_stats,
             enforce_eager=config.enforce_eager,
             disable_custom_all_reduce=True,
-            limit_mm_per_prompt={
-                "image": config.limit_images,
-                "time-series": 50,
-            } if config.limit_images > 0 else None,
-            disable_mm_preprocessor_cache=True,
             enable_chunked_prefill=config.enable_chunked_prefill,
             enable_sleep_mode=True,
+            **engine_kwargs,
         )
 
         # Offload vllm model to reduce peak memory usage
@@ -109,7 +129,7 @@ class vLLMRollout(BaseRollout):
         sampling_kwargs = {
             "max_tokens": config.response_length,
             "detokenize": False,
-            "logit_bias": _get_logit_bias(model_path, trust_remote_code=config.trust_remote_code),
+            "logit_bias": _get_logit_bias(processor),
         }
         default_sampling_params = SamplingParams()
         for key in config.to_dict().keys():
@@ -145,29 +165,32 @@ class vLLMRollout(BaseRollout):
         batch_size = input_ids.size(0)
 
         non_tensor_batch = prompts.non_tensor_batch
-        if batch_size != len(non_tensor_batch["raw_prompt_ids"]):
+        batch_raw_prompt_ids = non_tensor_batch.pop("raw_prompt_ids")
+        batch_multi_modal_data = non_tensor_batch.pop("multi_modal_data", None)
+        if batch_size != len(batch_raw_prompt_ids):
             raise RuntimeError("vllm sharding manager is not work properly.")
 
-        # Extract segmentation masks and bounding boxes if they exist
-        # segmentation_masks = prompts.batch.pop("segmentation_mask")
-        segmentation_masks = prompts.non_tensor_batch.pop("segmentation_mask")
-        bboxes = prompts.batch.pop("bbox")
-
-        if "multi_modal_data" in non_tensor_batch:
+        if batch_multi_modal_data is not None:
             vllm_inputs = []
-            for raw_prompt_ids, multi_modal_data in zip(
-                non_tensor_batch.pop("raw_prompt_ids"), non_tensor_batch.pop("multi_modal_data")
-            ):
-                vllm_inputs.append({"prompt_token_ids": list(raw_prompt_ids), "multi_modal_data": multi_modal_data})
+            for raw_prompt_ids, multi_modal_data in zip(batch_raw_prompt_ids, batch_multi_modal_data):
+                vllm_inputs.append(
+                    {
+                        "prompt_token_ids": list(raw_prompt_ids),
+                        "multi_modal_data": _process_multi_modal_data(
+                            multi_modal_data,
+                            prompts.meta_info["min_pixels"],
+                            prompts.meta_info["max_pixels"],
+                            prompts.meta_info["video_fps"],
+                        ),
+                    }
+                )
         else:
-            vllm_inputs = [
-                {"prompt_token_ids": list(raw_prompt_ids)} for raw_prompt_ids in non_tensor_batch.pop("raw_prompt_ids")
-            ]
+            vllm_inputs = [{"prompt_token_ids": list(raw_prompt_ids)} for raw_prompt_ids in batch_raw_prompt_ids]
 
         # users can customize different sampling_params at different run
         with self.update_sampling_params(**prompts.meta_info):
             completions: List[RequestOutput] = self.inference_engine.generate(
-                prompts=vllm_inputs, sampling_params=self.sampling_params, use_tqdm=(self.rank == 0)
+                prompts=vllm_inputs, sampling_params=self.sampling_params, use_tqdm=self.use_tqdm
             )
             response_ids = [output.token_ids for completion in completions for output in completion.outputs]
             response_ids = VF.pad_2d_list_to_length(
@@ -179,12 +202,8 @@ class vLLMRollout(BaseRollout):
                 input_ids = _repeat_interleave(input_ids, self.sampling_params.n)
                 attention_mask = _repeat_interleave(attention_mask, self.sampling_params.n)
                 position_ids = _repeat_interleave(position_ids, self.sampling_params.n)
-
-                # Also repeat segmentation masks and bounding boxes if they exist
-                if segmentation_masks is not None:
-                    segmentation_masks = _repeat_interleave(segmentation_masks, self.sampling_params.n)
-                if bboxes is not None:
-                    bboxes = _repeat_interleave(bboxes, self.sampling_params.n)
+                if batch_multi_modal_data is not None:
+                    batch_multi_modal_data = _repeat_interleave(batch_multi_modal_data, self.sampling_params.n)
 
         sequence_ids = torch.cat([input_ids, response_ids], dim=-1)
         response_length = response_ids.size(1)
@@ -212,9 +231,12 @@ class vLLMRollout(BaseRollout):
                 "attention_mask": attention_mask,
                 "response_mask": response_mask,
                 "position_ids": position_ids,
-                "segmentation_mask": segmentation_masks,
-                "bbox": bboxes
             },
             batch_size=batch_size,
         )
-        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch)
+        if batch_multi_modal_data is not None:
+            non_tensor_batch = {"multi_modal_data": batch_multi_modal_data}
+        else:
+            non_tensor_batch = {}
+
+        return DataProto(batch=batch, non_tensor_batch=non_tensor_batch, meta_info=prompts.meta_info)

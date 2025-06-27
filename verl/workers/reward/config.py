@@ -27,7 +27,7 @@ class RewardConfig:
     reward_function_kwargs: dict = field(default_factory=dict)
     skip_special_tokens: bool = True
     num_cpus: int = 1
-    """auto keys"""
+    # below are auto keys
     reward_function_name: Optional[str] = field(default=None, init=False)
 
     def post_init(self):
@@ -40,4 +40,5 @@ class RewardConfig:
             if os.path.exists(self.reward_function):  # ray job uses absolute path
                 self.reward_function = os.path.abspath(self.reward_function)
             else:
+                print(f"Reward function {self.reward_function} not found.")
                 self.reward_function = None

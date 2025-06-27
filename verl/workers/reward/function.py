@@ -27,13 +27,24 @@ from ...protocol import DataProto
 from .config import RewardConfig
 
 
+class RewardInput(TypedDict):
+    response: str
+    response_length: int
+    ground_truth: str
+
+
 class RewardScore(TypedDict):
     overall: float
     format: Optional[float]
     accuracy: Optional[float]
 
 
-RewardFunction = Callable[[str, str], RewardScore]
+SequentialRewardFunction = Callable[[RewardInput], RewardScore]
+
+BatchRewardFunction = Callable[[List[RewardInput]], List[RewardScore]]
+
+# Legacy support for medical reward functions
+MedicalRewardFunction = Callable[[str, str, torch.Tensor, torch.Tensor], RewardScore]
 
 
 class FunctionRewardManager:
@@ -57,7 +68,7 @@ class FunctionRewardManager:
         if not hasattr(module, config.reward_function_name):
             raise AttributeError(f"Module {module} does not have function {config.reward_function_name}.")
 
-        reward_fn: RewardFunction = getattr(module, config.reward_function_name)
+        reward_fn = getattr(module, config.reward_function_name)
         print(f"Using reward function `{config.reward_function_name}` from `{config.reward_function}`.")
         self.reward_fn = partial(reward_fn, **config.reward_function_kwargs)
         self.reward_function_name = config.reward_function_name
@@ -77,15 +88,57 @@ class FunctionRewardManager:
             response_str = self.tokenizer.decode(
                 valid_response_ids, skip_special_tokens=self.config.skip_special_tokens
             )
-            ground_truth = data_item.non_tensor_batch["ground_truth"]
-
+            
+            # Support for medical reward functions with legacy interface
             if "medical" in self.reward_function_name:
+                ground_truth = data_item.non_tensor_batch["ground_truth"]
                 segmentation_mask = data.batch["segmentation_mask"]
                 bounding_box = data.batch["bbox"]
                 score = self.reward_fn(response_str, ground_truth, segmentation_mask, bounding_box)
+                reward_tensor[i, valid_response_length - 1] = score["overall"]
             else:
-                score = self.reward_fn(response_str, ground_truth)
-            reward_tensor[i, valid_response_length - 1] = score["overall"]
+                # Standard reward function interface
+                response_length = data.batch["response_mask"].sum(dim=-1)
+                score = self.reward_fn(
+                    {
+                        "response": response_str,
+                        "response_length": response_length[i],
+                        "ground_truth": data.non_tensor_batch["ground_truth"][i],
+                    }
+                )
+                reward_tensor[i, response_length[i] - 1] = score["overall"]
+            
+            for key, value in score.items():
+                reward_metrics[key].append(value)
+
+        return reward_tensor, reward_metrics
+
+
+class BatchFunctionRewardManager(FunctionRewardManager):
+    reward_fn: BatchRewardFunction
+
+    def compute_reward(self, data: DataProto) -> Tuple[torch.Tensor, Dict[str, List[float]]]:
+        reward_inputs = []
+        response_ids = data.batch["responses"]
+        response_length = data.batch["response_mask"].sum(dim=-1)
+        for i in range(len(data)):
+            valid_response_ids = response_ids[i][: response_length[i]]
+            response_str = self.tokenizer.decode(
+                valid_response_ids, skip_special_tokens=self.config.skip_special_tokens
+            )
+            reward_inputs.append(
+                {
+                    "response": response_str,
+                    "response_length": response_length[i],
+                    "ground_truth": data.non_tensor_batch["ground_truth"][i],
+                }
+            )
+
+        scores = self.reward_fn(reward_inputs)
+        reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
+        reward_metrics = defaultdict(list)
+        for i, score in enumerate(scores):
+            reward_tensor[i, response_length[i] - 1] = score["overall"]
             for key, value in score.items():
                 reward_metrics[key].append(value)
 

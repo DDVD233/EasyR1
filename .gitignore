@@ -181,3 +181,8 @@ cython_debug/
 outputs/
 checkpoints
 wandb/
+tensorboard_log/
+
+# data
+images/
+images*

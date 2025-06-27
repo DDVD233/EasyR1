@@ -31,12 +31,16 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         prompt_key=config.prompt_key,
         answer_key=config.answer_key,
         image_key=config.image_key,
+        video_key=config.video_key,
+        image_dir=config.image_dir,
+        video_fps=config.video_fps,
         max_prompt_length=config.max_prompt_length,
         truncation="right",
         format_prompt=config.format_prompt,
         min_pixels=config.min_pixels,
         max_pixels=config.max_pixels,
         filter_overlong_prompts=config.filter_overlong_prompts,
+        filter_overlong_prompts_workers=config.filter_overlong_prompts_workers,
     )
     # use sampler for better ckpt resume
     if config.shuffle:
@@ -46,9 +50,14 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
     else:
         sampler = SequentialSampler(data_source=train_dataset)
 
+    if config.mini_rollout_batch_size is not None:
+        train_batch_size = config.mini_rollout_batch_size
+    else:
+        train_batch_size = config.rollout_batch_size
+
     train_dataloader = StatefulDataLoader(
         dataset=train_dataset,
-        batch_size=config.rollout_batch_size,
+        batch_size=train_batch_size,
         sampler=sampler,
         num_workers=2,
         collate_fn=collate_fn,
@@ -63,6 +72,7 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         prompt_key=config.prompt_key,
         answer_key=config.answer_key,
         image_key=config.image_key,
+        image_dir=config.image_dir,
         max_prompt_length=config.max_prompt_length,
         truncation="right",
         format_prompt=config.format_prompt,
@@ -70,9 +80,15 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         max_pixels=config.max_pixels,
         filter_overlong_prompts=config.filter_overlong_prompts,
     )
+
+    if config.val_batch_size == -1:
+        val_batch_size = len(val_dataset)
+    else:
+        val_batch_size = config.val_batch_size
+
     val_dataloader = StatefulDataLoader(
         dataset=val_dataset,
-        batch_size=len(val_dataset) if config.val_batch_size == -1 else config.val_batch_size,
+        batch_size=val_batch_size,
         shuffle=False,
         num_workers=2,
         collate_fn=collate_fn,

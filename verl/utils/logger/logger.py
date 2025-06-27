@@ -19,7 +19,7 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from torch.utils.tensorboard import SummaryWriter
+import torch
 
 from ..py_functional import convert_dict_to_str, flatten_dict, is_package_available, unflatten_dict
 from .gen_logger import AggregateGenerationsLogger
@@ -27,6 +27,10 @@ from .gen_logger import AggregateGenerationsLogger
 
 if is_package_available("mlflow"):
     import mlflow  # type: ignore
+
+
+if is_package_available("tensorboard"):
+    from torch.utils.tensorboard import SummaryWriter
 
 
 if is_package_available("wandb"):
@@ -56,29 +60,6 @@ class ConsoleLogger(Logger):
         print(f"Step {step}\n" + convert_dict_to_str(unflatten_dict(data)))
 
 
-class FileLogger(Logger):
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.log_dir = os.path.join(
-            "checkpoints",
-            config["trainer"]["project_name"],
-            config["trainer"]["experiment_name"]
-        )
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.log_file = os.path.join(self.log_dir, "train.log")
-
-        # Write config at the start
-        with open(self.log_file, 'w') as f:
-            f.write("Config\n")
-            f.write(convert_dict_to_str(config))
-            f.write("\n\n")
-
-    def log(self, data: Dict[str, Any], step: int) -> None:
-        with open(self.log_file, 'a') as f:
-            f.write(f"Step {step}\n")
-            f.write(convert_dict_to_str(unflatten_dict(data)))
-            f.write("\n\n")
-
-
 class MlflowLogger(Logger):
     def __init__(self, config: Dict[str, Any]) -> None:
         mlflow.start_run(run_name=config["trainer"]["experiment_name"])
@@ -86,40 +67,6 @@ class MlflowLogger(Logger):
 
     def log(self, data: Dict[str, Any], step: int) -> None:
         mlflow.log_metrics(metrics=data, step=step)
-
-
-class TensorBoardLogger(Logger):
-    def __init__(self, config: Dict[str, Any]) -> None:
-        tensorboard_dir = os.getenv("TENSORBOARD_DIR", "tensorboard_log")
-        os.makedirs(tensorboard_dir, exist_ok=True)
-        print(f"Saving tensorboard log to {tensorboard_dir}.")
-        self.writer = SummaryWriter(tensorboard_dir)
-        self.writer.add_hparams(hparam_dict=flatten_dict(config), metric_dict={"placeholder": 0})
-
-    def log(self, data: Dict[str, Any], step: int) -> None:
-        for key, value in data.items():
-            self.writer.add_scalar(key, value, step)
-
-    def finish(self):
-        self.writer.close()
-
-
-class WandbLogger(Logger):
-    def __init__(self, config: Dict[str, Any]) -> None:
-        if "WANDB_API_KEY" in os.environ:
-            wandb.login(key=os.environ["WANDB_API_KEY"])
-
-        wandb.init(
-            project=config["trainer"]["project_name"],
-            name=config["trainer"]["experiment_name"],
-            config=config,
-        )
-
-    def log(self, data: Dict[str, Any], step: int) -> None:
-        wandb.log(data=data, step=step)
-
-    def finish(self) -> None:
-        wandb.finish()
 
 
 class SwanlabLogger(Logger):
@@ -145,13 +92,53 @@ class SwanlabLogger(Logger):
         swanlab.finish()
 
 
+class TensorBoardLogger(Logger):
+    def __init__(self, config: Dict[str, Any]) -> None:
+        tensorboard_dir = os.getenv("TENSORBOARD_DIR", "tensorboard_log")
+        tensorboard_dir = os.path.join(
+            tensorboard_dir, config["trainer"]["project_name"], config["trainer"]["experiment_name"]
+        )
+        os.makedirs(tensorboard_dir, exist_ok=True)
+        print(f"Saving tensorboard log to {tensorboard_dir}.")
+        self.writer = SummaryWriter(tensorboard_dir)
+        config_dict = {}
+        for key, value in flatten_dict(config).items():
+            if isinstance(value, (int, float, str, bool, torch.Tensor)):
+                config_dict[key] = value
+            else:
+                config_dict[key] = str(value)
+
+        self.writer.add_hparams(hparam_dict=config_dict, metric_dict={"placeholder": 0})
+
+    def log(self, data: Dict[str, Any], step: int) -> None:
+        for key, value in data.items():
+            self.writer.add_scalar(key, value, step)
+
+    def finish(self):
+        self.writer.close()
+
+
+class WandbLogger(Logger):
+    def __init__(self, config: Dict[str, Any]) -> None:
+        wandb.init(
+            project=config["trainer"]["project_name"],
+            name=config["trainer"]["experiment_name"],
+            config=config,
+        )
+
+    def log(self, data: Dict[str, Any], step: int) -> None:
+        wandb.log(data=data, step=step)
+
+    def finish(self) -> None:
+        wandb.finish()
+
+
 LOGGERS = {
-    "wandb": WandbLogger,
-    "mlflow": MlflowLogger,
-    "tensorboard": TensorBoardLogger,
     "console": ConsoleLogger,
+    "mlflow": MlflowLogger,
     "swanlab": SwanlabLogger,
-    "file": FileLogger,
+    "tensorboard": TensorBoardLogger,
+    "wandb": WandbLogger,
 }
 
 

@@ -48,7 +48,7 @@ def get_processor(model_path: str, **kwargs) -> Optional[ProcessorMixin]:
         processor = None
 
     # Avoid load tokenizer, see:
-    # https://github.com/huggingface/transformers/blob/v4.49.0/src/transformers/models/auto/processing_auto.py#L344
+    # https://github.com/huggingface/transformers/blob/v4.52.4/src/transformers/models/auto/processing_auto.py#L386
     if processor is not None and "Processor" not in processor.__class__.__name__:
         processor = None
 
