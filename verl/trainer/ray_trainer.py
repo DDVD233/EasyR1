@@ -143,6 +143,18 @@ def compute_advantage(data: DataProto, adv_estimator: AdvantageEstimator, gamma:
         )
     elif adv_estimator == AdvantageEstimator.RLOO:
         advantages, returns = core_algos.compute_rloo_outcome_advantage(token_level_rewards, response_mask, index)
+    elif adv_estimator == AdvantageEstimator.DRPO:
+        domain_info = data.non_tensor_batch["dataset"]
+        log_probs = data.batch["old_log_probs"]  # log πθ  at rollout
+        ref_log_probs = data.batch["ref_log_probs"]  # log πref
+        advantages, returns = core_algos.compute_drpo_outcome_advantage(
+            token_level_rewards,
+            response_mask,
+            index,
+            domain_info,
+            log_probs,
+            ref_log_probs,
+        )
     else:
         raise NotImplementedError
 
