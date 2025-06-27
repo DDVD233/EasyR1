@@ -5,7 +5,7 @@ data:
   answer_key: answer
   image_key: images
   video_key: videos
-  image_dir: null
+  image_dir: /orcd/home/002/dvdai/orcd/scratch/high_modality
   video_fps: 2.0
   max_prompt_length: 2048
   max_response_length: 2048
