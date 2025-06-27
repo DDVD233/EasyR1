@@ -2,6 +2,9 @@ from collections import defaultdict
 import numpy as np
 import torch
 from typing import Dict, List, Set, Tuple, Union
+import json
+import os
+import datetime
 
 
 def parse_conditions(text: str) -> Set[str]:
@@ -377,6 +380,21 @@ def compute_metrics_by_data_source(
             - "{data_source}/{metric}" for data source metrics
             - "{data_source}/{dataset}/{metric}" for dataset metrics
     """
+    # Save inputs to json for debugging under outputs/
+
+    output_dir = "outputs"
+    os.makedirs(output_dir, exist_ok=True)
+    input_data = {
+        "predictions": predictions,
+        "ground_truths": ground_truths,
+        "data_sources": data_sources,
+        "datasets": datasets,
+        "demographics": demographics
+    }
+    # name is time in yyyy-mm-dd_hh-mm-ss format
+    with open(os.path.join(output_dir, f"input_data_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"), 'w') as f:
+        json.dump(input_data, f, indent=4)
+
     # Group examples by data source and dataset
     grouped_data = defaultdict(lambda: defaultdict(lambda: {"preds": [], "gts": []}))
 
