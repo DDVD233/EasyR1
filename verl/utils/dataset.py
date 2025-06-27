@@ -233,7 +233,9 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             if len(processed_images) > 0:
-                example["multi_modal_data"] = {"images": processed_images}
+                # Store the actual processor outputs (tensors), not PIL images
+                image_inputs = self.processor.image_processor(images=processed_images, return_tensors="pt")
+                example["multi_modal_data"] = {"images": dict(image_inputs)}
             else:
                 example["multi_modal_data"] = {}
         elif self.video_key in example:
@@ -260,7 +262,9 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             if len(processed_videos) > 0:
-                example["multi_modal_data"] = {"videos": processed_videos}
+                # Store the actual processor outputs (tensors), not PIL images
+                video_inputs = self.processor.image_processor(images=None, videos=processed_videos, return_tensors="pt")
+                example["multi_modal_data"] = {"videos": dict(video_inputs)}
             else:
                 example["multi_modal_data"] = {}
         else:

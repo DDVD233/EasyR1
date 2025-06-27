@@ -456,27 +456,13 @@ class FSDPWorker(Worker):
             video_fps = data.meta_info["video_fps"]
             batch_multi_modal_inputs = []
             for multi_modal_data in data.non_tensor_batch["multi_modal_data"]:
-                images, videos = [], []
                 if "images" in multi_modal_data:
-                    for image in multi_modal_data["images"]:
-                        images.append(image)
-
-                if "videos" in multi_modal_data:
-                    for video in multi_modal_data["videos"]:
-                        videos.append(video)
-
-                if len(images) != 0:
-                    # it's necessary to add `dict` to properly convert batch features to dict
-                    # otherwise the batch features will be converted to dict keys
-                    # see https://github.com/hiyouga/EasyR1/pull/339
-                    multi_modal_inputs = dict(self.processor.image_processor(images=images, return_tensors="pt"))
-                    multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
+                    # multi_modal_data["images"] now contains tensor dict, not PIL images
+                    multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_data["images"].items()}
                     batch_multi_modal_inputs.append(multi_modal_inputs)
-                elif len(videos) != 0:
-                    multi_modal_inputs = dict(
-                        self.processor.image_processor(images=None, videos=videos, return_tensors="pt")
-                    )
-                    multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
+                elif "videos" in multi_modal_data:
+                    # multi_modal_data["videos"] now contains tensor dict, not PIL images
+                    multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_data["videos"].items()}
                     batch_multi_modal_inputs.append(multi_modal_inputs)
                 else:  # text-only data
                     batch_multi_modal_inputs.append({})
