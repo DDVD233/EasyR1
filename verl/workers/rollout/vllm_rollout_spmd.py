@@ -54,11 +54,11 @@ def _process_multi_modal_data(
 ) -> Dict[str, Any]:
     # may convert image path to image object
     images, videos = [], []
-    if "images" in multi_modal_data:
+    if "images" in multi_modal_data and multi_modal_data["images"] is not None:
         for image in multi_modal_data["images"]:
             images.append(process_image(image, min_pixels, max_pixels))
 
-    if "videos" in multi_modal_data:
+    if "videos" in multi_modal_data and multi_modal_data["videos"] is not None:
         for video in multi_modal_data["videos"]:
             videos.append(process_video(video, min_pixels, max_pixels, video_fps))
 

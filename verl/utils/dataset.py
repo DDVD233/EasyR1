@@ -225,21 +225,22 @@ class RLHFDataset(Dataset):
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 
-            processed_images = [] if len(images) != 0 else None  # text-only data
+            processed_images = []
             for image in images:
                 processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
 
-            model_inputs = self.processor(processed_images, [prompt], add_special_tokens=False, return_tensors="pt")
+            model_inputs = self.processor(processed_images if len(processed_images) > 0 else None, [prompt], add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
-            example["multi_modal_data"] = {"images": processed_images}
+            if len(processed_images) > 0:
+                example["multi_modal_data"] = {"images": processed_images}
         elif self.video_key in example:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             videos = example.pop(self.video_key)
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
-            processed_videos = [] if len(videos) != 0 else None  # text-only data
+            processed_videos = []
             video_fps_list = []
             for video in videos:
                 processed_video, video_fps = process_video(
@@ -249,14 +250,15 @@ class RLHFDataset(Dataset):
                 video_fps_list.append(video_fps)
 
             model_inputs = self.processor(
-                videos=processed_videos, text=[prompt], add_special_tokens=False, return_tensors="pt"
+                videos=processed_videos if len(processed_videos) > 0 else None, text=[prompt], add_special_tokens=False, return_tensors="pt"
             )
             if "second_per_grid_ts" in self.processor.model_input_names:
                 model_inputs["second_per_grid_ts"] = [2.0 / video_sample_fps for video_sample_fps in video_fps_list]
 
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
-            example["multi_modal_data"] = {"videos": processed_videos}
+            if len(processed_videos) > 0:
+                example["multi_modal_data"] = {"videos": processed_videos}
         else:
             prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             model_inputs = self.tokenizer([prompt], add_special_tokens=False, return_tensors="pt")
