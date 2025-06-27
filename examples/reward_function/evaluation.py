@@ -1,10 +1,8 @@
-from collections import defaultdict
-import numpy as np
-import torch
-from typing import Dict, List, Set, Tuple, Union
+import datetime
 import json
 import os
-import datetime
+from collections import defaultdict
+from typing import Dict, List, Set
 
 
 def parse_conditions(text: str) -> Set[str]:
@@ -42,12 +40,12 @@ def extract_boxed_content(text: str) -> str:
     import re
 
     # Look for LaTeX \boxed{} notation
-    boxed_match = re.search(r'\\boxed{([^}]*)}', text)
+    boxed_match = re.search(r"\\boxed{([^}]*)}", text)
     if boxed_match:
         return boxed_match.group(1)
 
     # Look for markdown boxed notation (e.g., [boxed content])
-    markdown_match = re.search(r'\[(.*?)\]', text)
+    markdown_match = re.search(r"\[(.*?)\]", text)
     if markdown_match:
         return markdown_match.group(1)
 
@@ -87,24 +85,12 @@ def compute_class_metrics(class_name: str, confusion_matrix: Dict[str, int]) -> 
         "f1": f1,
         "accuracy": accuracy,
         "count": confusion_matrix["count"],
-        "confusion_matrix": {
-            "tp": tp,
-            "fp": fp,
-            "fn": fn,
-            "tn": tn
-        }
+        "confusion_matrix": {"tp": tp, "fp": fp, "fn": fn, "tn": tn},
     }
-def gender(
-    predictions: List[str],
-    ground_truths: List[str],
-    demographics: List[str]
-) -> Dict[str, float]:
 
 
-    groups = {
-        "male": {"preds": [], "gts": []},
-        "female": {"preds": [], "gts": []}
-    }
+def gender(predictions: List[str], ground_truths: List[str], demographics: List[str]) -> Dict[str, float]:
+    groups = {"male": {"preds": [], "gts": []}, "female": {"preds": [], "gts": []}}
 
     for pred, gt, demo in zip(predictions, ground_truths, demographics):
         if "male" in demo.lower():
@@ -132,21 +118,23 @@ def gender(
 
     return results
 
-def parent(
-    predictions: List[str],
-    ground_truths: List[str],
-    demographics: List[str]
-) -> Dict[str, float]:
 
+def parent(predictions: List[str], ground_truths: List[str], demographics: List[str]) -> Dict[str, float]:
     groups = {}
     for pred, gt, demo in zip(predictions, ground_truths, demographics):
         if "father" in demo.lower():
-            if demo.split("father:")[1].strip().split()[0] not in groups and demo.split("father:")[1].strip().split()[0] != "NAN":
+            if (
+                demo.split("father:")[1].strip().split()[0] not in groups
+                and demo.split("father:")[1].strip().split()[0] != "NAN"
+            ):
                 groups[demo.split("father:")[1].strip().split()[0]] = {"preds": [], "gts": []}
                 groups[demo.split("father:")[1].strip().split()[0]]["preds"].append(pred)
                 groups[demo.split("father:")[1].strip().split()[0]]["gts"].append(gt)
         elif "mother" in demo.lower():
-            if demo.split("mother:")[1].strip().split()[0] not in groups and demo.split("mother:")[1].strip().split()[0] != "NAN":
+            if (
+                demo.split("mother:")[1].strip().split()[0] not in groups
+                and demo.split("mother:")[1].strip().split()[0] != "NAN"
+            ):
                 groups[demo.split("mother:")[1].strip().split()[0]] = {"preds": [], "gts": []}
                 groups[demo.split("mother:")[1].strip().split()[0]]["preds"].append(pred)
                 groups[demo.split("mother:")[1].strip().split()[0]]["gts"].append(gt)
@@ -182,13 +170,7 @@ def parent(
     return results
 
 
-def age(
-    predictions: List[str],
-    ground_truths: List[str],
-    demographics: List[str]
-) -> Dict[str, float]:
-
-
+def age(predictions: List[str], ground_truths: List[str], demographics: List[str]) -> Dict[str, float]:
     groups = {
         "a1": {"preds": [], "gts": []},
         "a2": {"preds": [], "gts": []},
@@ -210,7 +192,6 @@ def age(
             elif 75 < float(demo.split("age:")[1].strip().split()[0]):
                 groups["a4"]["preds"].append(pred)
                 groups["a4"]["gts"].append(gt)
-
 
     results = {}
 
@@ -325,7 +306,7 @@ def compute_dataset_metrics(predictions: List[str], ground_truths: List[str]) ->
         "sensitivity": 0.0,
         "specificity": 0.0,
         "f1": 0.0,
-        "accuracy": 0.0
+        "accuracy": 0.0,
     }
 
     # Compute metrics for each class and accumulate for dataset average
@@ -348,21 +329,17 @@ def compute_dataset_metrics(predictions: List[str], ground_truths: List[str]) ->
             dataset_metrics[metric_name] /= active_classes
 
     # Add class metrics to the result
-    result = {
-        "class_metrics": class_metrics,
-        "dataset_metrics": dataset_metrics,
-        "active_classes": active_classes
-    }
+    result = {"class_metrics": class_metrics, "dataset_metrics": dataset_metrics, "active_classes": active_classes}
 
     return result
 
 
 def compute_metrics_by_data_source(
-        predictions: List[str],
-        ground_truths: List[str],
-        data_sources: List[str],
-        datasets: List[str],
-        demographics: List[str]
+    predictions: List[str],
+    ground_truths: List[str],
+    data_sources: List[str],
+    datasets: List[str],
+    demographics: List[str],
 ) -> Dict[str, float]:
     """
     Compute hierarchical metrics: class -> dataset -> data source -> global.
@@ -389,10 +366,12 @@ def compute_metrics_by_data_source(
         "ground_truths": ground_truths,
         "data_sources": data_sources,
         "datasets": datasets,
-        "demographics": demographics
+        "demographics": demographics,
     }
     # name is time in yyyy-mm-dd_hh-mm-ss format
-    with open(os.path.join(output_dir, f"input_data_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"), 'w') as f:
+    with open(
+        os.path.join(output_dir, f"input_data_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"), "w"
+    ) as f:
         json.dump(input_data, f, indent=4)
 
     # Group examples by data source and dataset
@@ -412,7 +391,7 @@ def compute_metrics_by_data_source(
         "sensitivity": 0.0,
         "specificity": 0.0,
         "f1": 0.0,
-        "accuracy": 0.0
+        "accuracy": 0.0,
     }
 
     # Compute metrics for each dataset within each data source
@@ -426,17 +405,14 @@ def compute_metrics_by_data_source(
             "sensitivity": 0.0,
             "specificity": 0.0,
             "f1": 0.0,
-            "accuracy": 0.0
+            "accuracy": 0.0,
         }
 
         total_datasets_in_source = 0
 
         for dataset_name, dataset_data in source_datasets.items():
             # Compute metrics for this dataset
-            dataset_result = compute_dataset_metrics(
-                dataset_data["preds"],
-                dataset_data["gts"]
-            )
+            dataset_result = compute_dataset_metrics(dataset_data["preds"], dataset_data["gts"])
 
             # Store dataset-level metrics with the format "data_source/dataset/metric"
             for metric_name, metric_value in dataset_result["dataset_metrics"].items():

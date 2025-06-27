@@ -1,5 +1,6 @@
-import torch
 from collections import defaultdict
+
+import torch
 
 
 class DomainScaler(torch.nn.Module):
@@ -9,18 +10,19 @@ class DomainScaler(torch.nn.Module):
       δ_d   = learned (>0), initialised at 1, L2-regularised toward 1.
     All statistics and parameters are kept internally.
     """
+
     def __init__(self, lr: float = 3e-6, l2: float = 1e-3, eps: float = 1e-6):
         super().__init__()
-        self.l2   = l2
-        self.eps  = eps
+        self.l2 = l2
+        self.eps = eps
         # learnable log δ per domain
         self._log_delta = torch.nn.ParameterDict()
-        self.opt        = torch.optim.Adam([], lr=lr)
+        self.opt = torch.optim.Adam([], lr=lr)
 
         # running statistics
         self._domain_stats = defaultdict(lambda: {"count": 0, "mean": 0.0})
         self._global_count = 0
-        self._global_mean  = 0.0
+        self._global_mean = 0.0
 
     # ---------- stats update (called once per mini-batch) ----------
     @torch.no_grad()
@@ -36,7 +38,7 @@ class DomainScaler(torch.nn.Module):
             d_stat["mean"] += (s - d_stat["mean"]) / d_stat["count"]
             # global running mean
             self._global_count += 1
-            self._global_mean  += (s - self._global_mean) / self._global_count
+            self._global_mean += (s - self._global_mean) / self._global_count
 
     def gamma(self, domain: str, device):
         """
@@ -50,16 +52,16 @@ class DomainScaler(torch.nn.Module):
             self.opt.add_param_group({"params": p})
 
         # 2) compute heuristic γ0_d from current stats
-        d_stat  = self._domain_stats[domain]
-        Nd      = max(d_stat["count"], 1)
-        mu_d    = d_stat["mean"]
-        Ng      = max(self._global_count, 1)
-        mu_g    = self._global_mean if abs(self._global_mean) > self.eps else self.eps
-        gamma0  = (Nd / Ng) / (mu_d / mu_g + self.eps)
+        d_stat = self._domain_stats[domain]
+        Nd = max(d_stat["count"], 1)
+        mu_d = d_stat["mean"]
+        Ng = max(self._global_count, 1)
+        mu_g = self._global_mean if abs(self._global_mean) > self.eps else self.eps
+        gamma0 = (Nd / Ng) / (mu_d / mu_g + self.eps)
 
         # 3) learned residual δ_d > 0
-        delta   = torch.nn.functional.softplus(self._log_delta[domain])
-        gamma   = (gamma0 * delta).to(device)
+        delta = torch.nn.functional.softplus(self._log_delta[domain])
+        gamma = (gamma0 * delta).to(device)
 
         # 4) L2 regulariser pulling δ→1
         reg_loss = 0.5 * self.l2 * (delta - 1.0) ** 2

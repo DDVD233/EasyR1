@@ -1,6 +1,4 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class VisionClassifier(nn.Module):
@@ -42,8 +40,8 @@ class VisionClassifier(nn.Module):
 
         # Copy weights for common classes if possible
         if old_classifier.out_features < num_classes:
-            self.classifier.weight.data[:old_classifier.out_features] = old_classifier.weight.data
+            self.classifier.weight.data[: old_classifier.out_features] = old_classifier.weight.data
             if old_classifier.bias is not None:
-                self.classifier.bias.data[:old_classifier.out_features] = old_classifier.bias.data
+                self.classifier.bias.data[: old_classifier.out_features] = old_classifier.bias.data
 
         return self.classifier

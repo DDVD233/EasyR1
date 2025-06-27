@@ -1,25 +1,22 @@
-import streamlit as st
-import re
-from openai import OpenAI
 import base64
-from io import BytesIO
-from PIL import Image
 import json
-import random
 import os
-import numpy as np
+import random
+import re
+from io import BytesIO
+
+import streamlit as st
+from openai import OpenAI
+from PIL import Image
+
 
 # Configure the page
-st.set_page_config(
-    page_title="Medical Image Analysis Demo",
-    page_icon="🔬",
-    layout="wide"
-)
+st.set_page_config(page_title="Medical Image Analysis Demo", page_icon="🔬", layout="wide")
 
 # Initialize the OpenAI client to connect to your local API
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="dummy-key"  # The API key doesn't matter as it's just a placeholder
+    api_key="dummy-key",  # The API key doesn't matter as it's just a placeholder
 )
 
 # Set up the Streamlit app
@@ -30,7 +27,7 @@ st.markdown("Analyze medical images using AI")
 # Function to format and display the assistant's response
 def format_assistant_response(response_text):
     # Check if response contains think tags
-    think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
+    think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
     think_match = think_pattern.search(response_text)
 
     if think_match:
@@ -38,10 +35,10 @@ def format_assistant_response(response_text):
         thinking = think_match.group(1).strip()
 
         # Remove the thinking part from the response
-        final_response = think_pattern.sub('', response_text).strip()
+        final_response = think_pattern.sub("", response_text).strip()
 
         # Check for boxed content
-        boxed_pattern = re.compile(r'\\boxed{(.*?)}', re.DOTALL)
+        boxed_pattern = re.compile(r"\\boxed{(.*?)}", re.DOTALL)
         boxed_match = boxed_pattern.search(final_response)
 
         if boxed_match:
@@ -52,7 +49,8 @@ def format_assistant_response(response_text):
 
             # Display thinking process in a collapsible section with distinct styling
             with st.expander("AI's Reasoning Process", expanded=True):
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div style="background-color: #f0f5ff; 
                             border-left: 5px solid #7792e3; 
                             padding: 10px; 
@@ -60,10 +58,13 @@ def format_assistant_response(response_text):
                     <small style="color: #555;">Reasoning Process:</small>
                     <div style="white-space: pre-wrap;">{thinking}</div>
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
 
             # Display the answer in a highlighted box
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <div style="background-color: #e6fffa; 
                         border: 2px solid #00cc99; 
                         padding: 15px; 
@@ -72,7 +73,9 @@ def format_assistant_response(response_text):
                         margin-bottom: 10px;">
                 <strong>Answer:</strong> {answer}
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
             # Display any additional text
             if other_text:
@@ -83,7 +86,8 @@ def format_assistant_response(response_text):
         else:
             # No boxed answer found, but still has thinking
             with st.expander("AI's Reasoning Process", expanded=True):
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div style="background-color: #f0f5ff; 
                             border-left: 5px solid #7792e3; 
                             padding: 10px; 
@@ -91,7 +95,9 @@ def format_assistant_response(response_text):
                     <small style="color: #555;">Reasoning Process:</small>
                     <div style="white-space: pre-wrap;">{thinking}</div>
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
 
             # Display the rest of the response
             st.markdown(final_response)
@@ -105,54 +111,44 @@ def format_assistant_response(response_text):
 # Function to extract and format streaming content
 def extract_content_for_streaming(text):
     # Check if we have complete think tags
-    think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
+    think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
     think_match = think_pattern.search(text)
 
     # Check if we have complete boxed content
-    boxed_pattern = re.compile(r'\\boxed{(.*?)}', re.DOTALL)
+    boxed_pattern = re.compile(r"\\boxed{(.*?)}", re.DOTALL)
     boxed_match = boxed_pattern.search(text)
 
     # If we're still in the thinking phase
-    think_open = '<think>' in text
-    think_close = '</think>' in text
+    think_open = "<think>" in text
+    think_close = "</think>" in text
 
     if think_open and not think_close:
         # We're in the middle of streaming thinking content
-        return {
-            'mode': 'thinking',
-            'content': text.split('<think>')[-1]
-        }
+        return {"mode": "thinking", "content": text.split("<think>")[-1]}
     elif think_match:
         # Complete thinking found
         thinking = think_match.group(1).strip()
 
-        rest_of_content = think_pattern.sub('', text).strip()
+        rest_of_content = think_pattern.sub("", text).strip()
         if boxed_match:
             # Complete boxed content found
             answer = boxed_match.group(1).strip()
             other = rest_of_content
-            if other.startswith('\\boxed{'):
-                other = boxed_pattern.sub('', rest_of_content).strip()
+            if other.startswith("\\boxed{"):
+                other = boxed_pattern.sub("", rest_of_content).strip()
             return {
-                'mode': 'complete',
-                'thinking': thinking,
-                'answer': answer,
-                'other': other
+                "mode": "complete",
+                "thinking": thinking,
+                "answer": answer,
+                "other": other,
                 # 'other': boxed_pattern.sub('', rest_of_content).strip()
             }
         else:
             # No boxed yet, or in progress
-            return {
-                'mode': 'post_thinking',
-                'thinking': thinking,
-                'content': rest_of_content
-            }
+            return {"mode": "post_thinking", "thinking": thinking, "content": rest_of_content}
     else:
         # Normal streaming
-        return {
-            'mode': 'normal',
-            'content': text
-        }
+        return {"mode": "normal", "content": text}
 
 
 # Function to encode image to base64 for the chat
@@ -189,18 +185,19 @@ def generate_follow_up_suggestions():
         # Prepare system message for follow-up generation
         system_message = {
             "role": "system",
-            "content": "You are an expert at generating concise, relevant follow-up questions for medical image conversations. Generate 3-4 single-sentence follow-up question options that a user might want to ask based on the current conversation. Questions should be diverse and explore different aspects. Return ONLY a JSON array of strings with no additional text. For example: [\"What is the prognosis for this condition?\", \"Are there any differential diagnoses to consider?\", \"What additional tests would be helpful?\"]"
+            "content": 'You are an expert at generating concise, relevant follow-up questions for medical image conversations. Generate 3-4 single-sentence follow-up question options that a user might want to ask based on the current conversation. Questions should be diverse and explore different aspects. Return ONLY a JSON array of strings with no additional text. For example: ["What is the prognosis for this condition?", "Are there any differential diagnoses to consider?", "What additional tests would be helpful?"]',
         }
 
         # Limit conversation history to last 4 exchanges (8 messages) to stay focused
-        recent_messages = st.session_state.messages[-8:] if len(
-            st.session_state.messages) > 8 else st.session_state.messages
+        recent_messages = (
+            st.session_state.messages[-8:] if len(st.session_state.messages) > 8 else st.session_state.messages
+        )
 
         # Filter out metadata from messages before sending to API
         filtered_messages = []
         for msg in recent_messages:
             # Create a copy of the message without metadata
-            filtered_msg = {k: v for k, v in msg.items() if k != 'metadata'}
+            filtered_msg = {k: v for k, v in msg.items() if k != "metadata"}
             filtered_messages.append(filtered_msg)
 
         # Call the API to generate follow-up suggestions
@@ -208,7 +205,7 @@ def generate_follow_up_suggestions():
             model=st.session_state.model_name,
             messages=[system_message] + filtered_messages,
             max_tokens=256,
-            temperature=0.7
+            temperature=0.7,
         )
 
         # Extract the response text
@@ -216,7 +213,7 @@ def generate_follow_up_suggestions():
 
         try:
             # Try to extract JSON array if wrapped in code blocks or has extra text
-            json_pattern = re.compile(r'\[.*\]', re.DOTALL)
+            json_pattern = re.compile(r"\[.*\]", re.DOTALL)
             json_match = json_pattern.search(suggestions_text)
 
             if json_match:
@@ -232,30 +229,34 @@ def generate_follow_up_suggestions():
             # If JSON parsing fails, try to extract suggestions directly from the text
             try:
                 # Look for numbered or bulleted lists
-                list_items = re.findall(r'[•\-*\d]+\.?\s*(.*?)(?:\n|$)', suggestions_text)
+                list_items = re.findall(r"[•\-*\d]+\.?\s*(.*?)(?:\n|$)", suggestions_text)
                 if list_items and len(list_items) >= 2:
                     return [item.strip() for item in list_items if item.strip()][:4]
 
                 # If no list format, just split by newlines
-                lines = [line.strip() for line in suggestions_text.split('\n') if line.strip()]
+                lines = [line.strip() for line in suggestions_text.split("\n") if line.strip()]
                 if lines and len(lines) >= 2:
-                    return [line for line in lines if not line.startswith(('```', '"""'))][:4]
+                    return [line for line in lines if not line.startswith(("```", '"""'))][:4]
             except:
                 pass
 
             # Use fallback suggestions without showing error
-            return ["Can you explain more about this finding?",
-                    "What are the clinical implications?",
-                    "How common is this condition?",
-                    "Are there any similar conditions to consider?"]  # Fallback suggestions
+            return [
+                "Can you explain more about this finding?",
+                "What are the clinical implications?",
+                "How common is this condition?",
+                "Are there any similar conditions to consider?",
+            ]  # Fallback suggestions
 
     except Exception as e:
         # Log the error but don't display it to the user
         print(f"Error generating follow-up suggestions: {str(e)}")
-        return ["Can you explain more about this finding?",
-                "What are the clinical implications?",
-                "How common is this condition?",
-                "Are there any treatment options available?"]  # Fallback suggestions
+        return [
+            "Can you explain more about this finding?",
+            "What are the clinical implications?",
+            "How common is this condition?",
+            "Are there any treatment options available?",
+        ]  # Fallback suggestions
 
 
 # Initialize session state
@@ -321,11 +322,14 @@ with left_col:
 
             # Display ground truth if available as small gray text (only for user messages with images)
             if message["role"] == "user" and "metadata" in message and "ground_truth" in message["metadata"]:
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                 <div style="color: #999; font-size: 0.8em; margin-top: 5px; font-style: italic;">
                     Ground truth: {message["metadata"]["ground_truth"]}
                 </div>
-                """, unsafe_allow_html=True)
+                """,
+                    unsafe_allow_html=True,
+                )
 
     # Generate assistant response if last message is from user
     if len(st.session_state.messages) > 0 and st.session_state.messages[-1]["role"] == "user":
@@ -335,7 +339,7 @@ with left_col:
             additional_placeholder = st.empty()
 
             full_response = ""
-            detected_mode = 'normal'
+            detected_mode = "normal"
             thinking_content = ""
 
             try:
@@ -343,21 +347,21 @@ with left_col:
                 system_message = {
                     "role": "system",
                     "content": "You FIRST think about the reasoning process as an internal monologue "
-                               ", then answer the user's question in a detailed manner, "
-                               "finally provide the final answer. The reasoning process MUST BE enclosed within "
-                               "<think> </think> tags. After you close thinking with </think>, "
-                               "you must then answer the question and recite the thinking process in a detailed, organized "
-                               "way. Finally, you must provide the final concise answer. "
-                               "The final answer MUST BE put in \\boxed{}."
-                               "You must answer in English. "
-                               ""
+                    ", then answer the user's question in a detailed manner, "
+                    "finally provide the final answer. The reasoning process MUST BE enclosed within "
+                    "<think> </think> tags. After you close thinking with </think>, "
+                    "you must then answer the question and recite the thinking process in a detailed, organized "
+                    "way. Finally, you must provide the final concise answer. "
+                    "The final answer MUST BE put in \\boxed{}."
+                    "You must answer in English. "
+                    "",
                 }
 
                 # Filter out metadata from messages before sending to API
                 filtered_messages = []
                 for msg in st.session_state.messages:
                     # Create a copy of the message without metadata
-                    filtered_msg = {k: v for k, v in msg.items() if k != 'metadata'}
+                    filtered_msg = {k: v for k, v in msg.items() if k != "metadata"}
                     filtered_messages.append(filtered_msg)
 
                 # Call the API with streaming
@@ -365,7 +369,7 @@ with left_col:
                     model=st.session_state.model_name,
                     messages=[system_message] + filtered_messages,
                     stream=True,
-                    max_tokens=1024
+                    max_tokens=1024,
                 )
 
                 # Process the streaming response with smart handling
@@ -376,14 +380,15 @@ with left_col:
 
                         # Parse the current state of the response
                         parsed = extract_content_for_streaming(full_response)
-                        current_mode = parsed['mode']
+                        current_mode = parsed["mode"]
 
                         # Handle based on the current state
-                        if current_mode == 'thinking':
+                        if current_mode == "thinking":
                             # Update the thinking section in real-time
                             with thinking_placeholder.container():
                                 with st.expander("AI's Reasoning Process", expanded=True):
-                                    st.markdown(f"""
+                                    st.markdown(
+                                        f"""
                                     <div style="background-color: #f0f5ff; 
                                                 border-left: 5px solid #7792e3; 
                                                 padding: 10px; 
@@ -391,14 +396,17 @@ with left_col:
                                         <small style="color: #555;">Reasoning Process:</small>
                                         <div style="white-space: pre-wrap;">{parsed['content']}</div>
                                     </div>
-                                    """, unsafe_allow_html=True)
+                                    """,
+                                        unsafe_allow_html=True,
+                                    )
 
-                        elif current_mode == 'post_thinking':
+                        elif current_mode == "post_thinking":
                             # Thinking is complete, show final thinking and start showing the next content
-                            thinking_content = parsed['thinking']
+                            thinking_content = parsed["thinking"]
                             with thinking_placeholder.container():
                                 with st.expander("AI's Reasoning Process", expanded=True):
-                                    st.markdown(f"""
+                                    st.markdown(
+                                        f"""
                                     <div style="background-color: #f0f5ff; 
                                                 border-left: 5px solid #7792e3; 
                                                 padding: 10px; 
@@ -406,19 +414,22 @@ with left_col:
                                         <small style="color: #555;">Reasoning Process:</small>
                                         <div style="white-space: pre-wrap;">{thinking_content}</div>
                                     </div>
-                                    """, unsafe_allow_html=True)
+                                    """,
+                                        unsafe_allow_html=True,
+                                    )
 
                             # Show any content after the thinking
-                            answer_placeholder.markdown(parsed['content'])
+                            answer_placeholder.markdown(parsed["content"])
 
-                        elif current_mode == 'complete':
+                        elif current_mode == "complete":
                             # Both thinking and boxed answer are complete
-                            thinking_content = parsed['thinking']
+                            thinking_content = parsed["thinking"]
 
                             # Update thinking section
                             with thinking_placeholder.container():
                                 with st.expander("AI's Reasoning Process", expanded=True):
-                                    st.markdown(f"""
+                                    st.markdown(
+                                        f"""
                                     <div style="background-color: #f0f5ff; 
                                                 border-left: 5px solid #7792e3; 
                                                 padding: 10px; 
@@ -426,10 +437,13 @@ with left_col:
                                         <small style="color: #555;">Reasoning Process:</small>
                                         <div style="white-space: pre-wrap;">{thinking_content}</div>
                                     </div>
-                                    """, unsafe_allow_html=True)
+                                    """,
+                                        unsafe_allow_html=True,
+                                    )
 
                             # Update answer box
-                            answer_placeholder.markdown(f"""
+                            answer_placeholder.markdown(
+                                f"""
                             <div style="background-color: #e6fffa; 
                                         border: 2px solid #00cc99; 
                                         padding: 15px; 
@@ -438,21 +452,23 @@ with left_col:
                                         margin-bottom: 10px;">
                                 <strong>Answer:</strong> {parsed['answer']}
                             </div>
-                            """, unsafe_allow_html=True)
+                            """,
+                                unsafe_allow_html=True,
+                            )
 
                             # Update additional content if any
-                            if parsed['other']:
-                                additional_placeholder.markdown(parsed['other'])
+                            if parsed["other"]:
+                                additional_placeholder.markdown(parsed["other"])
 
-                        elif current_mode == 'normal':
+                        elif current_mode == "normal":
                             # No special tags found yet, just show normal text
-                            thinking_placeholder.markdown(parsed['content'] + "▌")
+                            thinking_placeholder.markdown(parsed["content"] + "▌")
 
                         # Update the detected mode
                         detected_mode = current_mode
 
                 # Ensure we have a properly formatted final display
-                if detected_mode != 'complete':
+                if detected_mode != "complete":
                     # Do a final formatting of the complete response
                     thinking_placeholder.empty()
                     answer_placeholder.empty()
@@ -460,10 +476,7 @@ with left_col:
                     format_assistant_response(full_response)
 
                 # Add assistant response to chat history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": full_response
-                })
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
 
                 # Generate follow-up suggestions after assistant's response
                 st.session_state.follow_up_suggestions = generate_follow_up_suggestions()
@@ -479,18 +492,22 @@ with left_col:
                 st.code(traceback.format_exc())
 
     # Display follow-up suggestion buttons if there are any and the last message is from the assistant
-    if (len(st.session_state.messages) > 0 and
-            st.session_state.messages[-1]["role"] == "assistant" and
-            st.session_state.follow_up_suggestions):
-
+    if (
+        len(st.session_state.messages) > 0
+        and st.session_state.messages[-1]["role"] == "assistant"
+        and st.session_state.follow_up_suggestions
+    ):
         st.markdown("### Suggested Follow-ups")
 
         # Create a container with a distinctive background
         with st.container():
-            st.markdown("""
+            st.markdown(
+                """
             <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
             # Create buttons for each suggestion in two columns
             cols = st.columns(2)
@@ -501,10 +518,7 @@ with left_col:
                     button_key = f"follow_up_{i}_{hash(suggestion)}"
                     if st.button(suggestion, key=button_key):
                         # Add the selected suggestion as a user message
-                        st.session_state.messages.append({
-                            "role": "user",
-                            "content": suggestion
-                        })
+                        st.session_state.messages.append({"role": "user", "content": suggestion})
                         # Clear follow-up suggestions after selection
                         st.session_state.follow_up_suggestions = []
                         # Rerun to update the chat
@@ -518,20 +532,14 @@ with left_col:
         if st.session_state.current_image:
             user_message = {
                 "role": "user",
-                "content": [
-                    st.session_state.current_image,
-                    {"type": "text", "text": user_input}
-                ]
+                "content": [st.session_state.current_image, {"type": "text", "text": user_input}],
             }
 
             # Reset the image state after creating the message
             # This way the uploader is reset but the sample images remain
             st.session_state.uploader_key += 1  # Increment to reset the uploader
         else:
-            user_message = {
-                "role": "user",
-                "content": user_input
-            }
+            user_message = {"role": "user", "content": user_input}
 
         # Add user message to chat history
         st.session_state.messages.append(user_message)
@@ -574,17 +582,12 @@ with right_col:
         "Select model",
         ["qwen2-vl-7b-instruct"],  # You can add more models later
         index=0,
-        key="model_name"  # This ties the widget to session state
+        key="model_name",  # This ties the widget to session state
     )
 
     # Add custom CSS options
     st.subheader("UI Settings")
-    ui_theme = st.radio(
-        "Thinking Box Theme",
-        ["Blue", "Green", "Gray"],
-        index=0,
-        horizontal=True
-    )
+    ui_theme = st.radio("Thinking Box Theme", ["Blue", "Green", "Gray"], index=0, horizontal=True)
 
     if ui_theme == "Blue":
         st.session_state.think_bg = "#f0f5ff"
@@ -600,9 +603,7 @@ with right_col:
 
     # Use a key based on uploader_key to force re-rendering
     uploaded_file = st.file_uploader(
-        "Choose an image...",
-        type=["jpg", "jpeg", "png"],
-        key=f"uploader_{st.session_state.uploader_key}"
+        "Choose an image...", type=["jpg", "jpeg", "png"], key=f"uploader_{st.session_state.uploader_key}"
     )
 
     # Process the uploaded file
@@ -616,9 +617,7 @@ with right_col:
             img_base64 = encode_image(image)
             st.session_state.current_image = {
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{img_base64}"
-                }
+                "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
             }
             # Mark as processed to prevent re-processing
             st.session_state.processed_image = True
@@ -662,7 +661,7 @@ with right_col:
     # Create a test image if needed
     test_image_path = "sample.jpg"
     if not os.path.exists(test_image_path):
-        test_img = Image.new('RGB', (300, 300), color='blue')
+        test_img = Image.new("RGB", (300, 300), color="blue")
         test_img.save(test_image_path)
 
     try:
@@ -672,7 +671,7 @@ with right_col:
             all_samples = []
             try:
                 if os.path.exists(jsonl_path):
-                    with open(jsonl_path, 'r') as f:
+                    with open(jsonl_path, "r") as f:
                         lines = f.readlines()
 
                     for line in lines:
@@ -734,7 +733,7 @@ with right_col:
                             st.image(img, use_container_width=True)
 
                             # Create unique button key for each image
-                            if st.button(f"Select", key=f"img_btn_{sample_idx}"):
+                            if st.button("Select", key=f"img_btn_{sample_idx}"):
                                 # Store the selected sample for use in messages
                                 st.session_state.selected_sample = sample_idx
 
@@ -744,9 +743,7 @@ with right_col:
                                 # Store image in session state
                                 st.session_state.current_image = {
                                     "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{img_base64}"
-                                    }
+                                    "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
                                 }
 
                                 # Get the ground truth answer if available
@@ -757,12 +754,10 @@ with right_col:
                                     "role": "user",
                                     "content": [
                                         st.session_state.current_image,
-                                        {"type": "text", "text": problem_text}
+                                        {"type": "text", "text": problem_text},
                                     ],
                                     # Store ground truth in the message object but don't send to model
-                                    "metadata": {
-                                        "ground_truth": ground_truth
-                                    }
+                                    "metadata": {"ground_truth": ground_truth},
                                 }
 
                                 # Add to messages
@@ -783,7 +778,8 @@ with right_col:
         st.error(f"Error with sample images: {e}")
 
 # Add some custom CSS for better styling of the thinking process and answer boxes
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* Styling for the thinking process box */
     .thinking-box {
@@ -830,4 +826,6 @@ st.markdown("""
         border-color: #7792e3;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)

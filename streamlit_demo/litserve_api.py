@@ -1,5 +1,6 @@
 # server.py
 from threading import Thread
+
 import litserve as ls
 import torch
 from litserve.specs.openai import ChatCompletionRequest
@@ -10,11 +11,10 @@ from transformers import (
     TextIteratorStreamer,
 )
 
+
 # Define your model constants
 DEFAULT_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
-QWEN2_5_VL_MODELS = {
-    "qwen2.5-vl-7b-instruct": "Qwen/Qwen2.5-VL-7B-Instruct"
-}
+QWEN2_5_VL_MODELS = {"qwen2.5-vl-7b-instruct": "Qwen/Qwen2.5-VL-7B-Instruct"}
 
 
 def process_vision_info(messages):
@@ -39,6 +39,7 @@ def process_vision_info(messages):
                             # Extract base64 data
                             import base64
                             from io import BytesIO
+
                             from PIL import Image
 
                             try:
@@ -106,9 +107,7 @@ class Qwen25VLAPI(ls.LitAPI):
         # Process messages
         try:
             # Convert the Pydantic model to a dictionary
-            messages = [
-                message.model_dump(exclude_none=True) for message in request.messages
-            ]
+            messages = [message.model_dump(exclude_none=True) for message in request.messages]
 
             # Pre-process messages to ensure correct format
             for message in messages:
@@ -120,9 +119,7 @@ class Qwen25VLAPI(ls.LitAPI):
                             message["content"][i] = {"type": "text", "text": item}
 
             # Apply chat template
-            text = self.processor.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+            text = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
             # Process vision inputs
             image_inputs, video_inputs = process_vision_info(messages)

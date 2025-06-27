@@ -1,11 +1,11 @@
 from vllm import LLM
-
 from vllm.model_executor.models.registry import ModelRegistry
+
 from verl.models.transformers.vllm_qwen import TimeSeriesQwen2_5_VLForConditionalGeneration
 
+
 ModelRegistry.register_model(
-    "TimeSeriesQwen2_5_VLForConditionalGeneration",
-    TimeSeriesQwen2_5_VLForConditionalGeneration
+    "TimeSeriesQwen2_5_VLForConditionalGeneration", TimeSeriesQwen2_5_VLForConditionalGeneration
 )
 
 llm = LLM(
@@ -13,7 +13,7 @@ llm = LLM(
     model="/home/peili/EasyR1/verl/models/transformers/time_series_qwen2_5_vl",
     skip_tokenizer_init=False,
     tensor_parallel_size=1,
-    dtype='bfloat16',
+    dtype="bfloat16",
     gpu_memory_utilization=0.6,
     enforce_eager=False,
     max_model_len=4096,
@@ -28,5 +28,7 @@ llm = LLM(
 )
 
 import torch.distributed as dist
+
+
 if dist.is_initialized():
     dist.destroy_process_group()

@@ -1,9 +1,12 @@
-import torch
 from pathlib import Path
 
-data_dir = Path("/scratch/ecg/ptbxl")      # ← replace with your actual path
-output_dir = data_dir     # or set to data_dir if you want to overwrite
+import torch
+
+
+data_dir = Path("/scratch/ecg/ptbxl")  # ← replace with your actual path
+output_dir = data_dir  # or set to data_dir if you want to overwrite
 output_dir.mkdir(exist_ok=True)
+
 
 def normalize_multichannel_sample(sample):
     """
@@ -12,9 +15,10 @@ def normalize_multichannel_sample(sample):
     Returns: Tensor of same shape, normalized per channel.
     """
     mean = sample.mean(dim=1, keepdim=True)  # shape: (8, 1)
-    std = sample.std(dim=1, keepdim=True)    # shape: (8, 1)
-    std[std == 0] = 1                        # avoid divide-by-zero
+    std = sample.std(dim=1, keepdim=True)  # shape: (8, 1)
+    std[std == 0] = 1  # avoid divide-by-zero
     return (sample - mean) / std
+
 
 for pt_file in data_dir.glob("*.pt"):
     try:
@@ -24,7 +28,7 @@ for pt_file in data_dir.glob("*.pt"):
             continue
 
         normed_tensor = normalize_multichannel_sample(tensor)
-  
+
         # Save to new directory
         output_path = output_dir / pt_file.name
         torch.save(normed_tensor, output_path)

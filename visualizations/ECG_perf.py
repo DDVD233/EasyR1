@@ -1,9 +1,9 @@
 import os
-import numpy as np
-from pygame.transform import scale
-import plotly.graph_objects as go
-import plotly.express as px
 import time
+
+import plotly.express as px
+import plotly.graph_objects as go
+
 
 # https://github.com/plotly/plotly.py/issues/3469
 fig = px.scatter(x=[0, 1, 2, 3, 4], y=[0, 1, 4, 9, 16])
@@ -22,15 +22,17 @@ font_size = 24
 # Create figure
 fig = go.Figure()
 
-fig.add_trace(go.Bar(
-    y=methods,               # <-- was x=methods
-    x=ecg_perf,               # <-- was y=avg_tps
-    orientation='h',         # NEW
-    name="ECG Diagnosis Accuracy (%)",
-    marker_color="#da81c1",
-    width=0.9,
-    hovertemplate="Method: %{y}<br>Avg. TPS: %{x:.1f}s<extra></extra>"
-))
+fig.add_trace(
+    go.Bar(
+        y=methods,  # <-- was x=methods
+        x=ecg_perf,  # <-- was y=avg_tps
+        orientation="h",  # NEW
+        name="ECG Diagnosis Accuracy (%)",
+        marker_color="#da81c1",
+        width=0.9,
+        hovertemplate="Method: %{y}<br>Avg. TPS: %{x:.1f}s<extra></extra>",
+    )
+)
 
 # Update layout
 fig.update_layout(
@@ -43,7 +45,7 @@ fig.update_layout(
     # },
     xaxis_title="ECG Diagnosis Accuracy (%)",  # swapped
     yaxis_title="RL Method",  # swapped
-    barmode='overlay',
+    barmode="overlay",
     bargap=0,
     # legend=dict(
     #     orientation="h",
@@ -55,10 +57,7 @@ fig.update_layout(
     template="plotly_white",
     width=500,
     height=400,
-    font=dict(
-        size=font_size,
-        family="Computer Modern"
-    ),
+    font=dict(size=font_size, family="Computer Modern"),
 )
 
 # Adjust y-axis to make the scale more appropriate for showing both metrics
@@ -70,10 +69,10 @@ for i, method in enumerate(methods):
     # Primary bar label
     fig.add_annotation(
         y=method,
-        x=ecg_perf[i] +1.1,    # now offset in x
+        x=ecg_perf[i] + 1.1,  # now offset in x
         text=f"{ecg_perf[i]}",
         showarrow=False,
-        font=dict(size=font_size)
+        font=dict(size=font_size),
     )
 
 # Create images directory if it doesn't exist

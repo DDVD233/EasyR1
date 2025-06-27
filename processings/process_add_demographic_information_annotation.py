@@ -1,6 +1,9 @@
 import json
 import os
+
 from tqdm import tqdm
+
+
 # remove first two directory
 def remove_first_two_dirs(path):
     parts = os.path.normpath(path).split(os.sep)
@@ -8,11 +11,13 @@ def remove_first_two_dirs(path):
         return "/".join(parts)
     return "/".join(parts[2:])
 
+
 def keep_last_dirs(path):
     parts = os.path.normpath(path).split(os.sep)
     if len(parts) <= 2:
         return "/".join(parts)
     return "/".join(parts[2:])
+
 
 def parse_age(age):
     # Because some age are like [36Y]
@@ -24,13 +29,14 @@ def parse_age(age):
     if isinstance(age, str) and age.endswith("Y"):
         try:
             return int(age[:-1])
-    #only return digit part
+        # only return digit part
         except ValueError:
             return None
     if isinstance(age, (int, float)):
         return age
-    #return age
+    # return age
     return None
+
 
 subdatasets = {"chexpert_full", "vindr", "isic2020", "ham10000", "pad_ufes_20", "hemorrhage", "COVID-BLUES", "cmmd"}
 # dataset
@@ -40,9 +46,9 @@ metadata_lookup = {}
 for dataset in subdatasets:
     entries = []
     for fname in ["annotation_train.jsonl", "annotation_test.jsonl"]:
-# Warning: Some file names for test are valid, remember to change it
+        # Warning: Some file names for test are valid, remember to change it
         fpath = os.path.join(base_path, dataset, fname)
-# file path
+        # file path
         if os.path.exists(fpath):
             with open(fpath, "r") as f:
                 for line in f:
@@ -50,13 +56,15 @@ for dataset in subdatasets:
                         entries.append(json.loads(line))
                     except json.JSONDecodeError:
                         continue
-# append each line to a big dictionary
+    # append each line to a big dictionary
     metadata_lookup[dataset] = entries
+
+
 # add it into the dictionary of dataset
 def get_demo_info(dataset, image_path):
     entries = metadata_lookup.get(dataset, [])
     target = remove_first_two_dirs(image_path)
-# remove first two
+    # remove first two
     for entry in entries:
         if "images" in entry:
             if any(target == img for img in entry["images"]):
@@ -88,12 +96,12 @@ def get_demo_info(dataset, image_path):
 
 def enrich_jsonl(jsonl_filename):
     input_file = os.path.join(base_path, jsonl_filename)
-# change based on you
+    # change based on you
     with open(input_file, "r") as f:
         data = [json.loads(line) for line in f]
     new_data = []
     for item in tqdm(data, desc=f"Processing {jsonl_filename}"):
-# I like tqdm
+        # I like tqdm
         item.pop("demo", None)
         dataset = item.get("dataset")
         media = item.get("images", []) or item.get("videos", [])
@@ -106,6 +114,7 @@ def enrich_jsonl(jsonl_filename):
     with open(input_file, "w") as f:
         for item in new_data:
             f.write(json.dumps(item) + "\n")
+
 
 enrich_jsonl("geom_train_upsampled.jsonl")
 # enrich_jsonl("geom_valid_mini.jsonl")

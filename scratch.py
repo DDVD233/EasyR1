@@ -17,7 +17,6 @@
 # model.save_pretrained("/home/peili/EasyR1/verl/models/transformers/time_series_qwen2_5_vl", safe_serialization=True)
 
 
-
 # import torch
 # import os
 
@@ -30,8 +29,10 @@
 # ray.init(address="10.1.25.0:6389")
 
 import json
-import torch
 import os
+
+import torch
+
 
 data_dir = "/scratch/ecg"  # or any of your dataset JSONs
 json_path = os.path.join(data_dir, "ChapmanShaoxing_train.json")
@@ -47,14 +48,13 @@ for entry in data:
 
     full_path = os.path.join(data_dir, ts_path)
 
-    try :
+    try:
         torch.load(full_path)
     except:
         print(full_path)
         missing += 1
-    
-    
-    
+
+
 print(f"\n✅ Done checking {len(data)} entries")
 print(f"Missing files: {missing}")
 

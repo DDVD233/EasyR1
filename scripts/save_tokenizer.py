@@ -1,8 +1,7 @@
 import logging
-import os
 
 
-logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
+logging.basicConfig(format="%(asctime)s : %(levelname)s : %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -13,7 +12,7 @@ def save_qwen25_processor(output_path):
     Args:
         output_path: Directory to save the tokenizer and processor to
     """
-    from transformers import AutoTokenizer, AutoProcessor
+    from transformers import AutoProcessor, AutoTokenizer
 
     logger.info("Saving Qwen2.5 processor components...")
 
@@ -40,4 +39,4 @@ def save_qwen25_processor(output_path):
 
 
 if __name__ == "__main__":
-    save_qwen25_processor('/scratch/outputs/drpo_new_nvidia_custom_encoder_ups')
+    save_qwen25_processor("/scratch/outputs/drpo_new_nvidia_custom_encoder_ups")

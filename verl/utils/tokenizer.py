@@ -14,8 +14,8 @@
 """Utils for tokenization."""
 
 from typing import Optional
-from transformers import AutoProcessor, AutoTokenizer, PreTrainedTokenizer, ProcessorMixin
-from transformers import Qwen2VLImageProcessorFast
+
+from transformers import AutoProcessor, AutoTokenizer, PreTrainedTokenizer, ProcessorMixin, Qwen2VLImageProcessorFast
 
 
 def get_tokenizer(model_path: str, **kwargs) -> PreTrainedTokenizer:
@@ -40,8 +40,7 @@ def get_processor(model_path: str, **kwargs) -> Optional[ProcessorMixin]:
     try:
         if "qwen2" in model_path.lower():  # temporary patch for time_series_qwen2_5_vl
             image_processor = Qwen2VLImageProcessorFast.from_pretrained(model_path, **kwargs)
-            processor = AutoProcessor.from_pretrained(model_path, image_processor=image_processor,
-                                                      **kwargs)
+            processor = AutoProcessor.from_pretrained(model_path, image_processor=image_processor, **kwargs)
         else:
             processor = AutoProcessor.from_pretrained(model_path, **kwargs)
     except Exception:

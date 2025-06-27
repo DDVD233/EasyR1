@@ -1,13 +1,11 @@
-import re
 import json
+import random
+import re
 from typing import Dict
 
 import numpy
 import torch
-import numpy as np
 from mathruler.grader import extract_boxed_content
-import wandb
-import random
 
 
 def parse_conditions(text):
@@ -31,7 +29,7 @@ def parse_json(json_output):
     lines = json_output.splitlines()
     for i, line in enumerate(lines):
         if line == "```json" or line.strip() == "```":
-            json_output = "\n".join(lines[i + 1:])  # Remove everything before ```json
+            json_output = "\n".join(lines[i + 1 :])  # Remove everything before ```json
             if "```" in json_output:
                 json_output = json_output.split("```")[0]  # Remove everything after the closing ```
             break  # Exit the loop once code block marker is found
@@ -65,10 +63,11 @@ def extract_json_from_response(text):
 
     # If we couldn't parse any match as valid JSON, try with ast.literal_eval
     import ast
+
     for match in matches:
         try:
             # Clean up the match a bit
-            cleaned = match.strip().replace("'", "\"")
+            cleaned = match.strip().replace("'", '"')
             parsed_json = ast.literal_eval(cleaned)
             return parsed_json
         except:
@@ -105,7 +104,7 @@ def bbox_to_mask(bbox, height, width):
 
     # Set the box region to 1
     if x1 < x2 and y1 < y2:  # Ensure valid box dimensions
-        mask[y1:y2 + 1, x1:x2 + 1] = 1.0
+        mask[y1 : y2 + 1, x1 : x2 + 1] = 1.0
 
     return mask
 
@@ -237,8 +236,9 @@ def evaluate_bbox_format(predict_str):
         except json.JSONDecodeError:
             # Try with ast.literal_eval as fallback
             import ast
+
             try:
-                cleaned = json_str.replace("'", "\"")
+                cleaned = json_str.replace("'", '"')
                 parsed_json = ast.literal_eval(cleaned)
                 format_score += 0.1  # Only 10% for requiring fallback parsing
             except:
@@ -265,8 +265,11 @@ def evaluate_bbox_format(predict_str):
             if has_bbox and has_label:
                 bbox = item["bbox_2d"]
                 # Check bbox format [x1, y1, x2, y2]
-                if (isinstance(bbox, list) and len(bbox) == 4 and
-                        all(isinstance(coord, (int, float)) for coord in bbox)):
+                if (
+                    isinstance(bbox, list)
+                    and len(bbox) == 4
+                    and all(isinstance(coord, (int, float)) for coord in bbox)
+                ):
                     valid_items += 1
 
         # Add up to 40% based on proportion of valid items
@@ -309,7 +312,9 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
         false_negatives = len(ground_truth_conditions - predicted_conditions)
 
         # Calculate F1 score components
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        precision = (
+            true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        )
         recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
 
         # Calculate F1 score (harmonic mean of precision and recall)
@@ -323,7 +328,6 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
         length_score = 1
     else:
         length_score = len(predict_str) * 0.001
-
 
     # Calculate bounding box IoU score
     iou_score = 0.0
@@ -339,8 +343,8 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
                         pred_bboxes.append(item["bbox_2d"])
             elif isinstance(json_data, dict) and "bbox_2d" in json_data:
                 pred_bboxes.append(json_data["bbox_2d"])
-            elif isinstance(json_data, dict) and 'objects_of_interest' in json_data:
-                for item in json_data['objects_of_interest']:
+            elif isinstance(json_data, dict) and "objects_of_interest" in json_data:
+                for item in json_data["objects_of_interest"]:
                     if isinstance(item, dict) and "bbox_2d" in item:
                         pred_bboxes.append(item["bbox_2d"])
             # else:
@@ -348,7 +352,7 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
             if random.random() < 0.0005:  # print every 0.5%
                 print("[Bounding Box] ", json_data)
                 print("[Formatted Bounding Box] ", pred_bboxes)
-                print('[GT Bounding Box] ', bbox)
+                print("[GT Bounding Box] ", bbox)
 
             # Calculate IoU between predicted boxes and ground truth
             if pred_bboxes:
@@ -396,7 +400,9 @@ def medical_standard_score(predict_str: str, ground_truth: str, segmentation_mas
         false_negatives = len(ground_truth_conditions - predicted_conditions)
 
         # Calculate F1 score components
-        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        precision = (
+            true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        )
         recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
 
         # Calculate F1 score (harmonic mean of precision and recall)

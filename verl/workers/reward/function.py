@@ -20,7 +20,6 @@ from functools import partial
 from typing import Callable, Dict, List, Optional, Tuple, TypedDict
 
 import torch
-import wandb
 from transformers import PreTrainedTokenizer
 
 from ...protocol import DataProto
@@ -88,7 +87,7 @@ class FunctionRewardManager:
             response_str = self.tokenizer.decode(
                 valid_response_ids, skip_special_tokens=self.config.skip_special_tokens
             )
-            
+
             # Support for medical reward functions with legacy interface
             if "medical" in self.reward_function_name:
                 ground_truth = data_item.non_tensor_batch["ground_truth"]
@@ -107,7 +106,7 @@ class FunctionRewardManager:
                     }
                 )
                 reward_tensor[i, response_length[i] - 1] = score["overall"]
-            
+
             for key, value in score.items():
                 reward_metrics[key].append(value)
 

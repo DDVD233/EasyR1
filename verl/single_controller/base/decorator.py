@@ -166,9 +166,9 @@ def get_predefined_execute_fn(execute_mode: Execute):
 
 
 def _check_dispatch_mode(dispatch_mode: Union[Dispatch, Dict[Literal["dispatch_fn", "collect_fn"], FunctionType]]):
-    assert isinstance(dispatch_mode, (Dispatch, dict)), (
-        f"dispatch_mode must be a Dispatch or a Dict. Got {dispatch_mode}"
-    )
+    assert isinstance(
+        dispatch_mode, (Dispatch, dict)
+    ), f"dispatch_mode must be a Dispatch or a Dict. Got {dispatch_mode}"
     if isinstance(dispatch_mode, dict):
         necessary_keys = ["dispatch_fn", "collect_fn"]
         for key in necessary_keys:

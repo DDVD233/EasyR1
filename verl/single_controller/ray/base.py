@@ -134,9 +134,9 @@ def extract_pg_from_exist(
     searching_idx = 0
     for request_process, original_idx in sorted_process_on_nodes:
         assert searching_idx < len(sorted_src_pgs), f"no enough nodes for request: searching {searching_idx} th node"
-        assert request_process <= sorted_src_pgs[searching_idx].bundle_count, (
-            f"requesting {request_process} processes, bundle count cannot satisfy"
-        )
+        assert (
+            request_process <= sorted_src_pgs[searching_idx].bundle_count
+        ), f"requesting {request_process} processes, bundle count cannot satisfy"
         unsorted_pgs.append((original_idx, sorted_src_pgs[searching_idx]))
         searching_idx += 1
 
@@ -145,9 +145,9 @@ def extract_pg_from_exist(
 
 def merge_resource_pool(rp1: RayResourcePool, rp2: RayResourcePool) -> RayResourcePool:
     assert rp1.use_gpu == rp2.use_gpu, "Both RayResourcePool must either use_gpu or not"
-    assert rp1.max_colocate_count == rp2.max_colocate_count, (
-        "Both RayResourcePool must has the same max_colocate_count"
-    )
+    assert (
+        rp1.max_colocate_count == rp2.max_colocate_count
+    ), "Both RayResourcePool must has the same max_colocate_count"
     assert rp1.n_gpus_per_node == rp2.n_gpus_per_node, "Both RayResourcePool must has the same n_gpus_per_node"
     assert rp1.detached == rp2.detached, "Detached ResourcePool cannot be merged with non-detached ResourcePool"
 
@@ -306,9 +306,9 @@ class RayWorkerGroup(WorkerGroup):
                         else:
                             register_center_actor = ray.get_actor(f"{self.name_prefix}_register_center")
                             break
-                    assert register_center_actor is not None, (
-                        f"failed to get register_center_actor: {self.name_prefix}_register_center in {list_named_actors(all_namespaces=True)}"
-                    )
+                    assert (
+                        register_center_actor is not None
+                    ), f"failed to get register_center_actor: {self.name_prefix}_register_center in {list_named_actors(all_namespaces=True)}"
                     rank_zero_info = ray.get(register_center_actor.get_rank_zero_info.remote())
                     self._master_addr, self._master_port = rank_zero_info["MASTER_ADDR"], rank_zero_info["MASTER_PORT"]
                     # print(f"rank_zero_info: {rank_zero_info}")
@@ -462,9 +462,9 @@ def create_colocated_worker_cls(class_dict: dict[str, RayClassWithInitArgs]):
         if worker_cls is None:
             worker_cls = cls.cls.__ray_actor_class__.__base__
         else:
-            assert worker_cls == cls.cls.__ray_actor_class__.__base__, (
-                "the worker class should be the same when share the same process"
-            )
+            assert (
+                worker_cls == cls.cls.__ray_actor_class__.__base__
+            ), "the worker class should be the same when share the same process"
         cls_dict[key] = cls.cls
         init_args_dict[key] = {"args": cls.args, "kwargs": cls.kwargs}
 

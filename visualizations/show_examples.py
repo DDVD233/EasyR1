@@ -1,5 +1,4 @@
-import transformers
-from transformers import PreTrainedTokenizer, PreTrainedModel, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM
 
 
 def show_examples():
