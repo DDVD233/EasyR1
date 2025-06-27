@@ -234,6 +234,8 @@ class RLHFDataset(Dataset):
             attention_mask = model_inputs.pop("attention_mask")[0]
             if len(processed_images) > 0:
                 example["multi_modal_data"] = {"images": processed_images}
+            else:
+                example["multi_modal_data"] = {}
         elif self.video_key in example:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             videos = example.pop(self.video_key)
@@ -259,11 +261,14 @@ class RLHFDataset(Dataset):
             attention_mask = model_inputs.pop("attention_mask")[0]
             if len(processed_videos) > 0:
                 example["multi_modal_data"] = {"videos": processed_videos}
+            else:
+                example["multi_modal_data"] = {}
         else:
             prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             model_inputs = self.tokenizer([prompt], add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
+            example["multi_modal_data"] = {}
 
         if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
             # qwen2vl mrope
