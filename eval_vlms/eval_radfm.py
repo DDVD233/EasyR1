@@ -3,34 +3,36 @@
 Script for evaluating RadFM model through local inference.
 """
 
-import os
-import json
 import argparse
-import time
-import uuid
+import json
 import logging
-from typing import List, Dict
-import torch
-from tqdm import tqdm
-from PIL import Image
-from torchvision import transforms
-from transformers import LlamaTokenizer
+import os
+import time
 import traceback
+import uuid
+from typing import Dict, List
+
+import torch
+from dataset import SimpleDataset
 
 # Import evaluation metrics and dataset from the provided code
 from evaluation import compute_metrics_by_data_source
-from dataset import SimpleDataset
 
 # Import RadFM model components
 from Model.RadFM.multimodality_model import MultiLLaMAForCausalLM
+from PIL import Image
+from torchvision import transforms
+from tqdm import tqdm
+from transformers import LlamaTokenizer
+
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler('radfm_eval.log'), logging.StreamHandler()]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("radfm_eval.log"), logging.StreamHandler()],
 )
-logger = logging.getLogger('RadFM_Local_Eval')
+logger = logging.getLogger("RadFM_Local_Eval")
 
 
 def get_tokenizer(tokenizer_path, max_img_size=100, image_num=32):
@@ -90,20 +92,25 @@ def prepare_model_input(prompt: str, image_paths: List[str], tokenizer, image_pa
         Tuple of (tokenized_text, processed_images_tensor)
     """
     # Define image transformation pipeline
-    transform = transforms.Compose([
-        transforms.RandomResizedCrop([512, 512], scale=(0.8, 1.0),
-                                     interpolation=transforms.InterpolationMode.BICUBIC),
-        transforms.ToTensor(),
-    ])
+    transform = transforms.Compose(
+        [
+            transforms.RandomResizedCrop(
+                [512, 512], scale=(0.8, 1.0), interpolation=transforms.InterpolationMode.BICUBIC
+            ),
+            transforms.ToTensor(),
+        ]
+    )
 
     # Format for RadFM requires images with positions
     image_list = []
     for idx, img_path in enumerate(image_paths):
         # Place images at the beginning of the text
-        image_list.append({
-            'img_path': img_path,
-            'position': 0  # Insert at the beginning
-        })
+        image_list.append(
+            {
+                "img_path": img_path,
+                "position": 0,  # Insert at the beginning
+            }
+        )
 
     # Process text with image placeholders and convert images
     images = []
@@ -112,12 +119,12 @@ def prepare_model_input(prompt: str, image_paths: List[str], tokenizer, image_pa
 
     # Process each image in the list
     for img in image_list:
-        img_path = img['img_path']
-        position = img['position']
+        img_path = img["img_path"]
+        position = img["position"]
 
         try:
             # Load and transform the image
-            image = Image.open(img_path).convert('RGB')
+            image = Image.open(img_path).convert("RGB")
             image = transform(image)
             image = image.unsqueeze(0).unsqueeze(-1)  # Add batch and depth dimensions
 
@@ -128,8 +135,9 @@ def prepare_model_input(prompt: str, image_paths: List[str], tokenizer, image_pa
             images.append(torch.nn.functional.interpolate(image, size=(target_H, target_W, target_D)))
 
             # Insert image placeholder token at the specified position
-            new_questions[position] = "<image>" + image_padding_tokens[padding_index] + "</image>" + new_questions[
-                position]
+            new_questions[position] = (
+                "<image>" + image_padding_tokens[padding_index] + "</image>" + new_questions[position]
+            )
             padding_index += 1
         except Exception as e:
             logger.error(f"Error processing image {img_path}: {e}")
@@ -143,8 +151,8 @@ def prepare_model_input(prompt: str, image_paths: List[str], tokenizer, image_pa
     vision_x = torch.cat(images, dim=1).unsqueeze(0)
 
     # Join the character list back into a string and tokenize
-    text = ''.join(new_questions)
-    lang_x = tokenizer(text, max_length=2048, truncation=True, return_tensors="pt")['input_ids']
+    text = "".join(new_questions)
+    lang_x = tokenizer(text, max_length=2048, truncation=True, return_tensors="pt")["input_ids"]
 
     return lang_x, vision_x
 
@@ -168,7 +176,7 @@ def load_model(model_path, checkpoint_path, device="cuda"):
         )
 
         # Load pretrained model weights
-        ckpt = torch.load(checkpoint_path, map_location='cpu')
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
         model.load_state_dict(ckpt, strict=False)
 
         # Move model to selected device and set to evaluation mode
@@ -185,7 +193,7 @@ def load_results_file(results_file: str) -> Dict:
     """Load existing results from file if it exists."""
     if os.path.exists(results_file):
         try:
-            with open(results_file, 'r') as f:
+            with open(results_file, "r") as f:
                 return json.load(f)
         except json.JSONDecodeError:
             logger.warning(f"Error loading results file {results_file}, creating new file")
@@ -195,17 +203,17 @@ def load_results_file(results_file: str) -> Dict:
 
 def save_results(results: Dict, results_file: str):
     """Save results to file."""
-    with open(results_file, 'w') as f:
+    with open(results_file, "w") as f:
         json.dump(results, f, indent=2)
 
 
 def evaluate_dataset(
-        dataset_path: str,
-        model_path: str,
-        checkpoint_path: str,
-        output_dir: str = "results",
-        device: str = "cuda",
-        batch_size: int = 1  # Maintaining parameter for compatibility
+    dataset_path: str,
+    model_path: str,
+    checkpoint_path: str,
+    output_dir: str = "results",
+    device: str = "cuda",
+    batch_size: int = 1,  # Maintaining parameter for compatibility
 ):
     """
     Evaluate RadFM on a dataset through local inference.
@@ -280,10 +288,7 @@ Before analyzing medical images, you must identify and outline all objects of in
 
             # Prepare input for the model
             lang_x, vision_x = prepare_model_input(
-                prompt=prompt,
-                image_paths=image_paths,
-                tokenizer=tokenizer,
-                image_padding_tokens=image_padding_tokens
+                prompt=prompt, image_paths=image_paths, tokenizer=tokenizer, image_padding_tokens=image_padding_tokens
             )
 
             # Skip if input preparation failed
@@ -322,7 +327,7 @@ Before analyzing medical images, you must identify and outline all objects of in
                 "ground_truth": ground_truth,
                 "model_response": model_response,
                 "inference_time_seconds": elapsed_time,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             }
 
             # Add to results
@@ -349,12 +354,12 @@ Before analyzing medical images, you must identify and outline all objects of in
                 predictions=all_responses,
                 ground_truths=all_ground_truths,
                 data_sources=all_data_sources,
-                datasets=all_datasets
+                datasets=all_datasets,
             )
 
             # Save metrics
             metrics_file = os.path.join(output_dir, f"{model_name}_metrics.json")
-            with open(metrics_file, 'w') as f:
+            with open(metrics_file, "w") as f:
                 json.dump(metrics, f, indent=2)
 
             # Log overall metrics
@@ -371,17 +376,21 @@ Before analyzing medical images, you must identify and outline all objects of in
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate RadFM on a dataset through local inference")
-    parser.add_argument("--dataset_path", type=str,
-                        help="Path to the dataset JSON file",
-                        default="/mnt/8T/high_modality/geom_valid_mini_images_full.jsonl")
-    parser.add_argument("--model_path", type=str,
-                        help="Path to the language model files", default="./Language_files")
-    parser.add_argument("--checkpoint_path", type=str,
-                        help="Path to the model weights (pytorch_model.bin)", default="pytorch_model.bin")
-    parser.add_argument("--output_dir", type=str, default="results",
-                        help="Directory to save results")
-    parser.add_argument("--device", type=str, default="cuda",
-                        help="Device to run inference on (cuda or cpu)")
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        help="Path to the dataset JSON file",
+        default="/mnt/8T/high_modality/geom_valid_mini_images_full.jsonl",
+    )
+    parser.add_argument("--model_path", type=str, help="Path to the language model files", default="./Language_files")
+    parser.add_argument(
+        "--checkpoint_path",
+        type=str,
+        help="Path to the model weights (pytorch_model.bin)",
+        default="pytorch_model.bin",
+    )
+    parser.add_argument("--output_dir", type=str, default="results", help="Directory to save results")
+    parser.add_argument("--device", type=str, default="cuda", help="Device to run inference on (cuda or cpu)")
 
     args = parser.parse_args()
 
@@ -390,7 +399,7 @@ def main():
         model_path=args.model_path,
         checkpoint_path=args.checkpoint_path,
         output_dir=args.output_dir,
-        device=args.device
+        device=args.device,
     )
 
 

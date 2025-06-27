@@ -18,11 +18,14 @@ project_root/
 """
 
 from pathlib import Path
+
 import cv2
 import numpy as np
 
+
 # Root folder that contains the videos
 ROOT = Path("images")
+
 
 def sample_four_frames(video_path: Path) -> list[np.ndarray]:
     """Return 4 uniformly spaced frames (BGR images) from the given video."""
