@@ -76,7 +76,7 @@ worker:
     reward_function: ./examples/reward_function/medical.py:medical_compute_score
 
 trainer:
-  total_episodes: 3
+  total_epochs: 3
   logger: ["console", "wandb"]
   project_name: easy_r1
   experiment_name: qwen2_5_7b_math_grpo
