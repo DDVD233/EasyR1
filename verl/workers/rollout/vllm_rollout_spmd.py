@@ -56,11 +56,11 @@ def _process_multi_modal_data(
     images, videos = [], []
     if "images" in multi_modal_data and multi_modal_data["images"] is not None:
         for image in multi_modal_data["images"]:
-            images.append(process_image(image, min_pixels, max_pixels))
+            images.append(image)
 
     if "videos" in multi_modal_data and multi_modal_data["videos"] is not None:
         for video in multi_modal_data["videos"]:
-            videos.append(process_video(video, min_pixels, max_pixels, video_fps))
+            videos.append(video)
 
     if len(images) != 0:
         return {"image": images}

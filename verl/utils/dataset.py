@@ -14,6 +14,8 @@
 
 import math
 import os
+import logging
+import traceback
 from collections import defaultdict
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -30,24 +32,90 @@ from transformers import PreTrainedTokenizer, ProcessorMixin
 
 from ..models.transformers.qwen2_vl import get_rope_index
 from . import torch_functional as VF
+import copy
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.FileHandler('dataset_worker.log'), logging.StreamHandler()]
+)
+logger = logging.getLogger('RLHFDataset')
 
 
 def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
     tensors = defaultdict(list)
     non_tensors = defaultdict(list)
+
+    # Handle segmentation masks separately
+    seg_masks = []
+    max_height, max_width = 0, 0
+
+    # First pass: collect all tensors and find max dimensions for segmentation masks
     for feature in features:
         for key, value in feature.items():
-            if isinstance(value, torch.Tensor):
+            if key == "segmentation_mask":
+                assert isinstance(value, np.ndarray)
+                if len(value.shape) == 3:
+                    c, h, w = value.shape
+                    # Update max dimensions
+                    max_height = max(max_height, h)
+                    max_width = max(max_width, w)
+                elif len(value.shape) == 2:
+                    h, w = value.shape
+                    max_height = max(max_height, h)
+                    max_width = max(max_width, w)
+                seg_masks.append(value)
+            elif isinstance(value, torch.Tensor):
                 tensors[key].append(value)
             else:
                 non_tensors[key].append(value)
 
+    # Second pass: pad segmentation masks to max dimensions
+    if seg_masks:
+        padded_masks = []
+        for mask in seg_masks:
+            if mask is None:
+                # Create zero array for missing segmentation masks
+                padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
+            else:
+                # Get current dimensions
+                if len(mask.shape) == 3:  # [C, H, W]
+                    c, h, w = mask.shape
+                    # Calculate padding (bottom, right)
+                    pad_bottom = max_height - h
+                    pad_right = max_width - w
+                    # Pad the mask using numpy padding
+                    padded_mask = np.pad(mask, ((0, 0), (0, pad_bottom), (0, pad_right)),
+                                         mode='constant', constant_values=0)
+                    padded_masks.append(padded_mask)
+                elif len(mask.shape) == 2:  # [H, W]
+                    h, w = mask.shape
+                    # Calculate padding (bottom, right)
+                    pad_bottom = max_height - h
+                    pad_right = max_width - w
+                    # Pad the mask using numpy padding
+                    padded_mask = np.pad(mask, ((0, pad_bottom), (0, pad_right)),
+                                         mode='constant', constant_values=0)
+                    padded_mask = padded_mask[np.newaxis, :, :]  # Add channel dimension
+                    padded_masks.append(padded_mask)
+                else:
+                    # Handle unexpected shapes
+                    padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
+
+        # Add padded segmentation masks to non_tensors
+        non_tensors["segmentation_mask"] = np.stack(padded_masks, axis=0)
+
+    # Stack other tensors
     for key, value in tensors.items():
         tensors[key] = torch.stack(value, dim=0)
 
+    # Convert other non-tensors to arrays
     for key, value in non_tensors.items():
-        non_tensors[key] = np.array(value, dtype=object)
+        if key != "segmentation_mask":  # We've already handled segmentation masks
+            non_tensors[key] = np.array(value, dtype=object)
 
+    # Combine tensors and non-tensors
     return {**tensors, **non_tensors}
 
 
@@ -83,6 +151,36 @@ def process_video(
 ) -> Union[List[ImageObject], Tuple[List[ImageObject], List[float]]]:
     vision_info = {"video": video, "min_pixels": min_pixels, "max_pixels": max_pixels, "fps": video_fps}
     return fetch_video(vision_info, return_video_sample_fps=return_fps)
+
+
+def resize_bbox(bbox, original_width, original_height, new_width, new_height):
+    """
+    Resize bounding box coordinates based on image resizing ratio.
+
+    Args:
+        bbox (list): Original bounding box in format [x_min, y_min, x_max, y_max]
+        original_width (int): Width of the original image
+        original_height (int): Height of the original image
+        new_width (int): Width of the resized image
+        new_height (int): Height of the resized image
+
+    Returns:
+        list: Resized bounding box coordinates
+    """
+    # Calculate scaling factors
+    width_ratio = new_width / original_width
+    height_ratio = new_height / original_height
+
+    # Apply scaling to bounding box coordinates
+    x_min, y_min, x_max, y_max = bbox
+
+    # Scale coordinates
+    new_x_min = x_min * width_ratio
+    new_y_min = y_min * height_ratio
+    new_x_max = x_max * width_ratio
+    new_y_max = y_max * height_ratio
+
+    return [new_x_min, new_y_min, new_x_max, new_y_max]
 
 
 class RLHFDataset(Dataset):
@@ -216,8 +314,11 @@ class RLHFDataset(Dataset):
         return len(self.dataset)
 
     def __getitem__(self, index):
-        example: dict = self.dataset[index]
+        example: dict = copy.deepcopy(self.dataset[index])
         messages = self._build_messages(example)
+        
+        # Store original image dimensions for bbox resizing
+        original_dimensions = []
 
         if self.image_key in example:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
@@ -227,7 +328,15 @@ class RLHFDataset(Dataset):
 
             processed_images = []
             for image in images:
-                processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
+                # Store original dimensions before processing
+                if isinstance(image, str):
+                    img_path = os.path.join(self.image_dir, image) if self.image_dir else image
+                    img = Image.open(img_path)
+                    processed_images.append(process_image(img_path, self.min_pixels, self.max_pixels))
+                else:
+                    img = image
+                    processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
+                original_dimensions.append((img.width, img.height))
 
             model_inputs = self.processor(processed_images if len(processed_images) > 0 else None, [prompt], add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
@@ -305,9 +414,84 @@ class RLHFDataset(Dataset):
             elif self.truncation == "error":
                 raise RuntimeError(f"Prompt length {len(raw_prompt_ids)} is longer than {self.max_prompt_length}.")
 
+        # Initialize default values
+        target_size = (224, 224)
+        if 'processed_images' in locals() and processed_images:
+            target_size = processed_images[0].size
+            
+        # Handle segmentation mask if available
+        if "segmentation_path" in example and example["segmentation_path"]:
+            try:
+                seg_path = os.path.join(self.image_dir or "", example["segmentation_path"])
+                if os.path.exists(seg_path):
+                    logger.debug(f"Loading segmentation mask from {seg_path}")
+                    segmentation_mask = Image.open(seg_path)
+                    
+                    # Resize the segmentation mask to match the processed image dimensions
+                    resized_mask = segmentation_mask.resize(
+                        target_size,
+                        resample=Image.Resampling.NEAREST
+                    )
+                    
+                    mask_array = np.array(resized_mask)
+                    
+                    # If mask is grayscale, keep as 2D
+                    if len(mask_array.shape) == 3 and mask_array.shape[2] == 3:
+                        # If mask is RGB, convert to grayscale
+                        mask_array = np.mean(mask_array, axis=2)
+                        
+                    example["segmentation_mask"] = mask_array.astype(np.uint8)
+                else:
+                    logger.warning(f"Segmentation mask not found: {seg_path}")
+                    example["segmentation_mask"] = None
+            except Exception as e:
+                logger.error(f"Error loading segmentation mask: {str(e)}")
+                example["segmentation_mask"] = None
+        else:
+            example["segmentation_mask"] = None
+            
+        # Create default segmentation mask if none exists
+        if example["segmentation_mask"] is None:
+            example["segmentation_mask"] = np.zeros(target_size[::-1], dtype=np.uint8)  # (height, width)
+            
+        # Handle bounding box information
+        if "bbox" in example and example["bbox"] and original_dimensions:
+            try:
+                # Get original dimensions of the corresponding image
+                # We assume the bbox corresponds to the first image
+                original_width, original_height = original_dimensions[0]
+                target_width, target_height = target_size
+                
+                # Resize the bounding box
+                resized_bbox = resize_bbox(
+                    example["bbox"],
+                    original_width,
+                    original_height,
+                    target_width,
+                    target_height
+                )
+                
+                logger.debug(f"Resized bbox from {example['bbox']} to {resized_bbox}. "
+                             f"Original dimensions: {original_dimensions[0]}, "
+                             f"Target dimensions: {target_width}x{target_height}")
+                example["bbox"] = resized_bbox
+            except Exception as e:
+                logger.error(f"Error resizing bounding box: {str(e)}")
+                example["bbox"] = [0, 0, 0, 0]
+        else:
+            # Use empty list as placeholder if not available
+            example["bbox"] = [0, 0, 0, 0]
+            
+        # Make bbox tensor
+        example["bbox"] = torch.tensor(example["bbox"], dtype=torch.float32)
+
         example["input_ids"] = input_ids
         example["attention_mask"] = attention_mask
         example["position_ids"] = position_ids
         example["raw_prompt_ids"] = raw_prompt_ids
         example["ground_truth"] = example.pop(self.answer_key)
+        
+        # Clean up
+        example.pop("segmentation_path", None)
+        
         return example
