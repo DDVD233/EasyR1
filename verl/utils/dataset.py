@@ -319,14 +319,13 @@ class RLHFDataset(Dataset):
         
         # Store original image dimensions for bbox resizing
         original_dimensions = []
+        processed_images = []  # Initialize for all cases
 
         if self.image_key in example:
-            prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             images = example.pop(self.image_key)
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 
-            processed_images = []
             for image in images:
                 # Store original dimensions before processing
                 if isinstance(image, str):
@@ -337,6 +336,36 @@ class RLHFDataset(Dataset):
                     img = image
                     processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
                 original_dimensions.append((img.width, img.height))
+            
+            # Ensure the prompt has the correct number of <image> tags
+            prompt_str = example[self.prompt_key]
+            if self.format_prompt:
+                format_prompt = Template(self.format_prompt.strip())
+                prompt_str = format_prompt.render(content=prompt_str)
+            
+            # Count existing image tokens and adjust if needed
+            image_count_in_prompt = prompt_str.count("<image>")
+            image_count = len(processed_images)
+            
+            if image_count_in_prompt == 0 and image_count > 0:
+                # Add image token at the beginning if none exists
+                prompt_str = "<image> " + prompt_str
+                image_count_in_prompt = 1
+            
+            if image_count > 1 and image_count_in_prompt < image_count:
+                # Add more image tokens to match the number of images
+                missing_count = image_count - image_count_in_prompt
+                prompt_str = prompt_str.replace("<image>", "<image> " * (missing_count + 1), 1)
+            elif image_count_in_prompt > image_count and image_count > 0:
+                # Remove excess image tokens
+                excess_count = image_count_in_prompt - image_count
+                for _ in range(excess_count):
+                    prompt_str = prompt_str.replace("<image>", "", 1)
+            
+            # Rebuild messages with corrected prompt
+            example[self.prompt_key] = prompt_str
+            messages = self._build_messages(example)
+            prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
             model_inputs = self.processor(processed_images if len(processed_images) > 0 else None, [prompt], add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
@@ -345,10 +374,11 @@ class RLHFDataset(Dataset):
                 # Store the actual processor outputs (tensors), not PIL images
                 image_inputs = self.processor.image_processor(images=processed_images, return_tensors="pt")
                 example["multi_modal_data"] = {"images": dict(image_inputs)}
+                # Also store the processed PIL images for rollout worker
+                example["multi_modal_data"]["processed_images"] = processed_images
             else:
                 example["multi_modal_data"] = {}
         elif self.video_key in example:
-            prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             videos = example.pop(self.video_key)
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
@@ -361,6 +391,32 @@ class RLHFDataset(Dataset):
                 )
                 processed_videos.append(processed_video)
                 video_fps_list.append(video_fps)
+            
+            # Ensure the prompt has the correct number of <video> tags  
+            prompt_str = example[self.prompt_key]
+            if self.format_prompt:
+                format_prompt = Template(self.format_prompt.strip())
+                prompt_str = format_prompt.render(content=prompt_str)
+            
+            # Replace <video> with <image> and adjust count
+            prompt_str = prompt_str.replace("<video>", "<image>")
+            image_count_in_prompt = prompt_str.count("<image>")
+            
+            # Count total video frames
+            total_frames = sum(len(video) if isinstance(video, list) else 1 for video in processed_videos)
+            
+            if image_count_in_prompt == 0 and total_frames > 0:
+                prompt_str = "<image> " + prompt_str
+                image_count_in_prompt = 1
+            
+            if total_frames > 1 and image_count_in_prompt < total_frames:
+                missing_count = total_frames - image_count_in_prompt
+                prompt_str = prompt_str.replace("<image>", "<image> " * (missing_count + 1), 1)
+            
+            # Rebuild messages with corrected prompt
+            example[self.prompt_key] = prompt_str
+            messages = self._build_messages(example)
+            prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
             model_inputs = self.processor(
                 videos=processed_videos if len(processed_videos) > 0 else None, text=[prompt], add_special_tokens=False, return_tensors="pt"
@@ -374,6 +430,8 @@ class RLHFDataset(Dataset):
                 # Store the actual processor outputs (tensors), not PIL images
                 video_inputs = self.processor.image_processor(images=None, videos=processed_videos, return_tensors="pt")
                 example["multi_modal_data"] = {"videos": dict(video_inputs)}
+                # Also store the processed videos for rollout worker
+                example["multi_modal_data"]["processed_videos"] = processed_videos
             else:
                 example["multi_modal_data"] = {}
         else:

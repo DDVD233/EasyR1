@@ -52,15 +52,39 @@ def _get_logit_bias(processor: Optional[ProcessorMixin]) -> Optional[Dict[int, f
 def _process_multi_modal_data(
     multi_modal_data: Dict[str, Any], min_pixels: int, max_pixels: int, video_fps: float
 ) -> Dict[str, Any]:
-    # may convert image path to image object
+    # Handle the processed images/videos from dataset
+    if "processed_images" in multi_modal_data and multi_modal_data["processed_images"] is not None:
+        return {"image": multi_modal_data["processed_images"]}
+    
+    if "processed_videos" in multi_modal_data and multi_modal_data["processed_videos"] is not None:
+        # Flatten list of video frames
+        all_frames = []
+        for video_frames in multi_modal_data["processed_videos"]:
+            if isinstance(video_frames, list):
+                all_frames.extend(video_frames)
+            else:
+                all_frames.append(video_frames)
+        return {"image": all_frames}  # vLLM treats video frames as images
+    
+    # Legacy fallback - handle tensor dictionaries
     images, videos = [], []
     if "images" in multi_modal_data and multi_modal_data["images"] is not None:
-        for image in multi_modal_data["images"]:
-            images.append(image)
+        # If it's a tensor dict, we can't use it directly in vLLM
+        if isinstance(multi_modal_data["images"], dict):
+            # Skip tensor dict - should use processed_images instead
+            pass
+        else:
+            for image in multi_modal_data["images"]:
+                images.append(image)
 
     if "videos" in multi_modal_data and multi_modal_data["videos"] is not None:
-        for video in multi_modal_data["videos"]:
-            videos.append(video)
+        # If it's a tensor dict, we can't use it directly in vLLM
+        if isinstance(multi_modal_data["videos"], dict):
+            # Skip tensor dict - should use processed_videos instead
+            pass
+        else:
+            for video in multi_modal_data["videos"]:
+                videos.append(video)
 
     if len(images) != 0:
         return {"image": images}
