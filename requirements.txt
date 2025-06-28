@@ -24,6 +24,6 @@ packaging
 ninja
 pyyaml
 codetiming
-ray[data,train,tune,serve]
+ray
 omegaconf
 tensordict
