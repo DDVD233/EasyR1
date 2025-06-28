@@ -17,7 +17,7 @@ data:
   shuffle: true
   seed: 1
   min_pixels: 65536
-  max_pixels: 262144
+  max_pixels: 1048576
   filter_overlong_prompts: false
 
 algorithm:
