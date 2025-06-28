@@ -59,6 +59,11 @@ from .config import ActorConfig, CriticConfig, FSDPConfig, ModelConfig, OptimCon
 from .rollout import vLLMRollout
 from .sharding_manager import FSDPVLLMShardingManager
 from .sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
+import tracemalloc
+import gc
+import os
+from datetime import datetime
+import pickle
 
 
 class FSDPWorker(Worker):
@@ -71,6 +76,24 @@ class FSDPWorker(Worker):
         self.config = config
         self.role = role
         self._cache = {}
+        
+        # Initialize memory tracking for ALL ranks
+        self.enable_memory_tracking = os.environ.get('ENABLE_MEMORY_TRACKING', '1') == '1'
+        self.memory_snapshot_dir = os.environ.get('MEMORY_SNAPSHOT_DIR', '/tmp/memory_snapshots')
+        self.memory_log_all_ranks = os.environ.get('MEMORY_LOG_ALL_RANKS', '1') == '1'  # Log from all ranks by default
+        
+        if self.enable_memory_tracking:
+            # Create rank-specific directory
+            self.rank_snapshot_dir = os.path.join(self.memory_snapshot_dir, f"rank_{self.rank}")
+            os.makedirs(self.rank_snapshot_dir, exist_ok=True)
+            tracemalloc.start()
+            self.memory_snapshots = []
+            self.update_count = 0
+            self._print_memory_rank(f"Memory tracking enabled for rank {self.rank}. Snapshots will be saved to {self.rank_snapshot_dir}")
+            
+            # Initialize memory baseline
+            self.baseline_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
+            self.baseline_cpu_memory = psutil.virtual_memory().used / (1024**3)
 
         if not dist.is_initialized():
             dist.init_process_group(backend="nccl")
@@ -104,6 +127,160 @@ class FSDPWorker(Worker):
 
         if self._has_ref:  # NOTE: it seems that manual offload is slower than FSDP offload
             self._use_ref_param_offload = self.config.ref.offload.offload_params
+    
+    def _print_memory_rank(self, *args, **kwargs):
+        """Print memory debug info for all ranks or just rank 0."""
+        if self.memory_log_all_ranks or self.rank == 0:
+            print(f"[Rank {self.rank}]", *args, **kwargs)
+    
+    def _take_memory_snapshot(self, tag: str):
+        """Take a detailed memory snapshot for debugging."""
+        if not self.enable_memory_tracking:
+            return
+        
+        # Get current memory usage
+        current, peak = tracemalloc.get_traced_memory()
+        gpu_allocated = torch.cuda.memory_allocated() / (1024**3)
+        gpu_reserved = torch.cuda.memory_reserved() / (1024**3)
+        gpu_max_allocated = torch.cuda.max_memory_allocated() / (1024**3)
+        cpu_percent = psutil.virtual_memory().percent
+        cpu_used_gb = psutil.virtual_memory().used / (1024**3)
+        
+        # Calculate deltas from baseline
+        gpu_delta = gpu_allocated - self.baseline_gpu_memory
+        cpu_delta = cpu_used_gb - self.baseline_cpu_memory
+        
+        snapshot = tracemalloc.take_snapshot()
+        self.memory_snapshots.append({
+            'tag': tag,
+            'timestamp': datetime.now().isoformat(),
+            'rank': self.rank,
+            'role': self.role,
+            'tracemalloc_current_mb': current / (1024**2),
+            'tracemalloc_peak_mb': peak / (1024**2),
+            'gpu_allocated_gb': gpu_allocated,
+            'gpu_reserved_gb': gpu_reserved,
+            'gpu_max_allocated_gb': gpu_max_allocated,
+            'gpu_delta_gb': gpu_delta,
+            'cpu_percent': cpu_percent,
+            'cpu_used_gb': cpu_used_gb,
+            'cpu_delta_gb': cpu_delta,
+            'snapshot': snapshot
+        })
+        
+        # Print summary
+        self._print_memory_rank(f"\n[Memory Snapshot - {tag}]")
+        self._print_memory_rank(f"  Role: {self.role}")
+        self._print_memory_rank(f"  TraceMalloc: {current / (1024**2):.2f} MB (peak: {peak / (1024**2):.2f} MB)")
+        self._print_memory_rank(f"  GPU: {gpu_allocated:.2f} GB allocated (Δ{gpu_delta:+.2f}), {gpu_reserved:.2f} GB reserved, max: {gpu_max_allocated:.2f} GB")
+        self._print_memory_rank(f"  CPU: {cpu_percent:.1f}% ({cpu_used_gb:.2f} GB used, Δ{cpu_delta:+.2f})\n")
+        
+        # Print top memory allocations
+        if len(self.memory_snapshots) > 1:
+            prev_snapshot = self.memory_snapshots[-2]['snapshot']
+            top_stats = snapshot.compare_to(prev_snapshot, 'traceback')
+            
+            significant_changes = [stat for stat in top_stats if abs(stat.size_diff) > 1024*1024]  # > 1MB
+            if significant_changes:
+                self._print_memory_rank(f"Top memory changes since {self.memory_snapshots[-2]['tag']}:")
+                for i, stat in enumerate(significant_changes[:10]):
+                    self._print_memory_rank(f"  #{i+1}: {stat.size_diff / (1024**2):+.2f} MB, {stat.count_diff:+d} blocks")
+                    for line in stat.traceback.format()[-2:]:
+                        self._print_memory_rank(f"      {line.strip()}")
+        
+        # Save detailed snapshot periodically or on significant changes
+        should_save = (self.update_count % 10 == 0 or 
+                      abs(gpu_delta) > 0.5 or  # GPU memory changed by >0.5GB
+                      abs(cpu_delta) > 1.0)    # CPU memory changed by >1GB
+        
+        if should_save:
+            snapshot_file = os.path.join(
+                self.rank_snapshot_dir,
+                f"snapshot_{self.role}_{self.update_count}_{tag}.pkl"
+            )
+            try:
+                with open(snapshot_file, 'wb') as f:
+                    pickle.dump({
+                        'tag': tag,
+                        'timestamp': datetime.now().isoformat(),
+                        'rank': self.rank,
+                        'role': self.role,
+                        'stats': snapshot.statistics('traceback')[:100],  # Top 100 allocations
+                        'memory_info': self.memory_snapshots[-1]
+                    }, f)
+                self._print_memory_rank(f"  Saved detailed snapshot to {snapshot_file}")
+            except Exception as e:
+                self._print_memory_rank(f"  Failed to save snapshot: {e}")
+        
+        # Synchronize across all ranks to ensure consistent logging
+        if dist.is_initialized():
+            dist.barrier()
+    
+    def _check_for_memory_leaks(self):
+        """Check for potential memory leaks."""
+        if not self.enable_memory_tracking or len(self.memory_snapshots) < 5:
+            return
+        
+        # Check if memory is consistently increasing
+        recent_snapshots = self.memory_snapshots[-5:]
+        cpu_trend = [s['cpu_used_gb'] for s in recent_snapshots]
+        gpu_trend = [s['gpu_allocated_gb'] for s in recent_snapshots]
+        
+        cpu_increasing = all(cpu_trend[i] <= cpu_trend[i+1] for i in range(len(cpu_trend)-1))
+        gpu_increasing = all(gpu_trend[i] <= gpu_trend[i+1] for i in range(len(gpu_trend)-1))
+        
+        # Calculate total increase
+        cpu_increase = cpu_trend[-1] - cpu_trend[0]
+        gpu_increase = gpu_trend[-1] - gpu_trend[0]
+        
+        if (cpu_increasing and cpu_increase > 0.5) or (gpu_increasing and gpu_increase > 0.1):
+            self._print_memory_rank(f"\n[WARNING] Potential memory leak detected on rank {self.rank}!")
+            if cpu_increasing:
+                self._print_memory_rank(f"  CPU memory increasing: {' -> '.join(f'{x:.2f}GB' for x in cpu_trend)}")
+                self._print_memory_rank(f"  Total increase: {cpu_increase:.2f} GB")
+            if gpu_increasing:
+                self._print_memory_rank(f"  GPU memory increasing: {' -> '.join(f'{x:.2f}GB' for x in gpu_trend)}")
+                self._print_memory_rank(f"  Total increase: {gpu_increase:.2f} GB")
+            
+            # Print tensor information
+            self._print_tensor_info()
+            
+            # Force garbage collection
+            self._print_memory_rank("  Running garbage collection...")
+            collected = gc.collect()
+            self._print_memory_rank(f"  Collected {collected} objects")
+            torch.cuda.empty_cache()
+            
+            # Take another snapshot after GC
+            self._take_memory_snapshot("after_gc")
+    
+    def _print_tensor_info(self):
+        """Print information about tensors in memory."""
+        try:
+            # Count tensors by size
+            tensor_counts = {}
+            total_size = 0
+            
+            for obj in gc.get_objects():
+                if torch.is_tensor(obj) and obj.is_cuda:
+                    size = obj.element_size() * obj.nelement()
+                    shape_str = str(tuple(obj.shape))
+                    key = f"{shape_str} ({obj.dtype})" 
+                    if key not in tensor_counts:
+                        tensor_counts[key] = {'count': 0, 'size': 0}
+                    tensor_counts[key]['count'] += 1
+                    tensor_counts[key]['size'] += size
+                    total_size += size
+            
+            if tensor_counts:
+                self._print_memory_rank(f"  Active GPU tensors (total: {total_size / (1024**3):.2f} GB):")
+                # Sort by total size
+                sorted_tensors = sorted(tensor_counts.items(), key=lambda x: x[1]['size'], reverse=True)
+                for i, (shape, info) in enumerate(sorted_tensors[:10]):
+                    size_gb = info['size'] / (1024**3)
+                    self._print_memory_rank(f"    {shape}: {info['count']} tensors, {size_gb:.3f} GB total")
+        except Exception as e:
+            self._print_memory_rank(f"  Failed to get tensor info: {e}")
 
     def _init_dist_mesh(self, config: Union[ActorConfig, CriticConfig], role: Literal["actor", "critic"]):
         world_size = dist.get_world_size()
@@ -448,6 +625,8 @@ class FSDPWorker(Worker):
             return
 
         if "uid" in self._cache and not np.all(data.non_tensor_batch["uid"] == self._cache["uid"]):
+            if self.enable_memory_tracking:
+                self._print_memory_rank(f"  Clearing cache due to UID mismatch")
             self._cache.clear()
 
         if "multi_modal_inputs" not in self._cache:
@@ -489,6 +668,10 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_actor(self, data: DataProto):
         assert self._has_actor
+        
+        if self.enable_memory_tracking:
+            self.update_count += 1
+            self._take_memory_snapshot(f"update_actor_start_{self.update_count}")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -536,6 +719,22 @@ class FSDPWorker(Worker):
             offload_fsdp_optimizer(optimizer=self.optimizer)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"update_actor_end_{self.update_count}")
+            self._check_for_memory_leaks()
+            
+            # Clear any cached data that might be holding references
+            if self.update_count % 5 == 0:
+                self._print_memory_rank(f"\n[Clearing caches at update {self.update_count}]")
+                if hasattr(self, '_cache'):
+                    cache_size = len(str(self._cache))
+                    self._print_memory_rank(f"  Cache size before clear: ~{cache_size} bytes")
+                    self._cache.clear()
+                gc.collect()
+                torch.cuda.empty_cache()
+                self._take_memory_snapshot(f"after_cache_clear_{self.update_count}")
+        
         return output
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
