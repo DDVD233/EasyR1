@@ -1,7 +1,7 @@
 import json
 import random
 import re
-from typing import Dict
+from typing import Dict, List
 
 import numpy
 import torch
@@ -283,9 +283,109 @@ def evaluate_bbox_format(predict_str):
     return format_score
 
 
+def medical_compute_score_batch(batch_inputs: List[Dict]) -> List[Dict[str, float]]:
+    """
+    Compute medical scoring for batch inputs including standard score, bounding box IoU, and format score.
+    
+    Args:
+        batch_inputs: List of dictionaries containing:
+            - response: The model's prediction string
+            - response_length: Length of the response
+            - ground_truth: The ground truth string
+            - segmentation_mask: Ground truth segmentation mask tensor (optional)
+            - bbox: Ground truth bounding box (optional)
+    
+    Returns:
+        List of score dictionaries
+    """
+    batch_scores = []
+    
+    for i, input_dict in enumerate(batch_inputs):
+        predict_str = input_dict["response"]
+        ground_truth = input_dict["ground_truth"]
+        segmentation_mask = input_dict.get("segmentation_mask")
+        bbox = input_dict.get("bbox")
+        print(f"{i}/{len(batch_inputs)} Processing input...")
+        
+        # Calculate standard score
+        answer = extract_boxed_content(predict_str)
+        if answer == "None":
+            standard_score = 0.0  # no answer
+        else:
+            # Parse both prediction and ground truth into sets of conditions
+            predicted_conditions = parse_conditions(answer)
+            ground_truth_conditions = parse_conditions(ground_truth)
+
+            # Calculate true positives, false positives, and false negatives
+            true_positives = len(predicted_conditions.intersection(ground_truth_conditions))
+            false_positives = len(predicted_conditions - ground_truth_conditions)
+            false_negatives = len(ground_truth_conditions - predicted_conditions)
+
+            # Calculate F1 score components
+            precision = (
+                true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+            )
+            recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+
+            # Calculate F1 score (harmonic mean of precision and recall)
+            standard_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+
+        # Calculate format score (how well the JSON follows the expected format)
+        format_score = evaluate_bbox_format(predict_str)
+
+        # length score
+        if len(predict_str) > 600:  # ~200 words
+            length_score = 1
+        else:
+            length_score = len(predict_str) * 0.001
+
+        # Calculate bounding box IoU score
+        iou_score = 0.0
+        # Extract predicted bounding boxes from the response
+        json_data = extract_json_from_response(predict_str)
+        if json_data:
+            # Extract bounding boxes from the JSON
+            try:
+                pred_bboxes = []
+                if isinstance(json_data, list):
+                    for item in json_data:
+                        if isinstance(item, dict) and "bbox_2d" in item:
+                            pred_bboxes.append(item["bbox_2d"])
+                elif isinstance(json_data, dict) and "bbox_2d" in json_data:
+                    pred_bboxes.append(json_data["bbox_2d"])
+                elif isinstance(json_data, dict) and "objects_of_interest" in json_data:
+                    for item in json_data["objects_of_interest"]:
+                        if isinstance(item, dict) and "bbox_2d" in item:
+                            pred_bboxes.append(item["bbox_2d"])
+                
+                if random.random() < 0.0005:  # print every 0.5%
+                    print("[Bounding Box] ", json_data)
+                    print("[Formatted Bounding Box] ", pred_bboxes)
+                    print("[GT Bounding Box] ", bbox)
+
+                # Calculate IoU between predicted boxes and ground truth
+                if pred_bboxes:
+                    iou_score = calculate_bbox_iou(pred_bboxes, segmentation_mask, bbox)
+            except:
+                pass
+
+        scores = {
+            "overall": 0.5 * standard_score + 0.3 * iou_score + 0.1 * format_score + 0.1 * length_score,
+            "standard_score": standard_score,
+            "iou_score": iou_score,
+            "format_score": format_score,
+            "length_score": length_score,
+        }
+        batch_scores.append(scores)
+    
+    return batch_scores
+
+
 def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask=None, bbox=None) -> Dict[str, float]:
     """
     Compute medical scoring including standard score, bounding box IoU, and format score.
+    
+    This is a wrapper for backward compatibility that calls the batch version.
 
     Args:
         predict_str: The model's prediction string
@@ -297,78 +397,15 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
         Tuple of (standard_score, bbox_score)
         Note: bbox_score is a combination of IoU score and format score
     """
-    # Calculate standard score
-    answer = extract_boxed_content(predict_str)
-    if answer == "None":
-        standard_score = 0.0  # no answer
-    else:
-        # Parse both prediction and ground truth into sets of conditions
-        predicted_conditions = parse_conditions(answer)
-        ground_truth_conditions = parse_conditions(ground_truth)
-
-        # Calculate true positives, false positives, and false negatives
-        true_positives = len(predicted_conditions.intersection(ground_truth_conditions))
-        false_positives = len(predicted_conditions - ground_truth_conditions)
-        false_negatives = len(ground_truth_conditions - predicted_conditions)
-
-        # Calculate F1 score components
-        precision = (
-            true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
-        )
-        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
-
-        # Calculate F1 score (harmonic mean of precision and recall)
-        standard_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
-    # Calculate format score (how well the JSON follows the expected format)
-    format_score = evaluate_bbox_format(predict_str)
-
-    # length score
-    if len(predict_str) > 600:  # ~200 words
-        length_score = 1
-    else:
-        length_score = len(predict_str) * 0.001
-
-    # Calculate bounding box IoU score
-    iou_score = 0.0
-    # Extract predicted bounding boxes from the response
-    json_data = extract_json_from_response(predict_str)
-    if json_data:
-        # Extract bounding boxes from the JSON
-        try:
-            pred_bboxes = []
-            if isinstance(json_data, list):
-                for item in json_data:
-                    if isinstance(item, dict) and "bbox_2d" in item:
-                        pred_bboxes.append(item["bbox_2d"])
-            elif isinstance(json_data, dict) and "bbox_2d" in json_data:
-                pred_bboxes.append(json_data["bbox_2d"])
-            elif isinstance(json_data, dict) and "objects_of_interest" in json_data:
-                for item in json_data["objects_of_interest"]:
-                    if isinstance(item, dict) and "bbox_2d" in item:
-                        pred_bboxes.append(item["bbox_2d"])
-            # else:
-            #     print("Error: Invalid JSON format")
-            if random.random() < 0.0005:  # print every 0.5%
-                print("[Bounding Box] ", json_data)
-                print("[Formatted Bounding Box] ", pred_bboxes)
-                print("[GT Bounding Box] ", bbox)
-
-            # Calculate IoU between predicted boxes and ground truth
-            if pred_bboxes:
-                iou_score = calculate_bbox_iou(pred_bboxes, segmentation_mask, bbox)
-        except:
-            pass
-            # traceback.print_exc()
-
-    scores = {
-        "overall": 0.5 * standard_score + 0.3 * iou_score + 0.1 * format_score + 0.1 * length_score,
-        "standard_score": standard_score,
-        "iou_score": iou_score,
-        "format_score": format_score,
-        "length_score": length_score,
-    }
-    return scores
+    batch_input = [{
+        "response": predict_str,
+        "response_length": len(predict_str),
+        "ground_truth": ground_truth,
+        "segmentation_mask": segmentation_mask,
+        "bbox": bbox
+    }]
+    
+    return medical_compute_score_batch(batch_input)[0]
 
 
 def medical_standard_score(predict_str: str, ground_truth: str, segmentation_mask=None, bbox=None) -> Dict[str, float]:

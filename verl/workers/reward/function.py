@@ -121,18 +121,30 @@ class BatchFunctionRewardManager(FunctionRewardManager):
         reward_inputs = []
         response_ids = data.batch["responses"]
         response_length = data.batch["response_mask"].sum(dim=-1)
+        
+        # Check if this is a medical reward function
+        is_medical = "medical" in self.reward_function_name
+        
         for i in range(len(data)):
             valid_response_ids = response_ids[i][: response_length[i]]
             response_str = self.tokenizer.decode(
                 valid_response_ids, skip_special_tokens=self.config.skip_special_tokens
             )
-            reward_inputs.append(
-                {
-                    "response": response_str,
-                    "response_length": response_length[i],
-                    "ground_truth": data.non_tensor_batch["ground_truth"][i],
-                }
-            )
+            
+            input_dict = {
+                "response": response_str,
+                "response_length": response_length[i],
+                "ground_truth": data.non_tensor_batch["ground_truth"][i],
+            }
+            
+            # Add medical-specific fields if this is a medical reward function
+            if is_medical:
+                if "segmentation_mask" in data.batch:
+                    input_dict["segmentation_mask"] = data.batch["segmentation_mask"][i]
+                if "bbox" in data.batch:
+                    input_dict["bbox"] = data.batch["bbox"][i]
+            
+            reward_inputs.append(input_dict)
 
         scores = self.reward_fn(reward_inputs)
         reward_tensor = torch.zeros_like(data.batch["responses"], dtype=torch.float32)
