@@ -327,15 +327,15 @@ class RLHFDataset(Dataset):
                 images = [os.path.join(self.image_dir, image) for image in images]
 
             for image in images:
-                # Store original dimensions before processing
+                # Get original dimensions before processing
                 if isinstance(image, str):
-                    img_path = os.path.join(self.image_dir, image) if self.image_dir else image
-                    img = Image.open(img_path)
-                    processed_images.append(process_image(img_path, self.min_pixels, self.max_pixels))
+                    img = Image.open(image)
                 else:
                     img = image
-                    processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
                 original_dimensions.append((img.width, img.height))
+                
+                # Process the image
+                processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
             
             # Ensure the prompt has the correct number of <image> tags
             prompt_str = example[self.prompt_key]
@@ -371,11 +371,8 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             if len(processed_images) > 0:
-                # Store the actual processor outputs (tensors), not PIL images
-                image_inputs = self.processor.image_processor(images=processed_images, return_tensors="pt")
-                example["multi_modal_data"] = {"images": dict(image_inputs)}
-                # Also store the processed PIL images for rollout worker
-                example["multi_modal_data"]["processed_images"] = processed_images
+                # Store the processed PIL images for vLLM rollout worker
+                example["multi_modal_data"] = {"images": processed_images}
             else:
                 example["multi_modal_data"] = {}
         elif self.video_key in example:
@@ -427,11 +424,15 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             if len(processed_videos) > 0:
-                # Store the actual processor outputs (tensors), not PIL images
-                video_inputs = self.processor.image_processor(images=None, videos=processed_videos, return_tensors="pt")
-                example["multi_modal_data"] = {"videos": dict(video_inputs)}
-                # Also store the processed videos for rollout worker
-                example["multi_modal_data"]["processed_videos"] = processed_videos
+                # Flatten all video frames into a single list for vLLM
+                all_frames = []
+                for video_frames in processed_videos:
+                    if isinstance(video_frames, list):
+                        all_frames.extend(video_frames)
+                    else:
+                        all_frames.append(video_frames)
+                # Store the flattened frames as images for vLLM
+                example["multi_modal_data"] = {"images": all_frames}
             else:
                 example["multi_modal_data"] = {}
         else:
