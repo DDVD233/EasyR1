@@ -52,13 +52,22 @@ def _get_logit_bias(processor: Optional[ProcessorMixin]) -> Optional[Dict[int, f
 def _process_multi_modal_data(
     multi_modal_data: Dict[str, Any], min_pixels: int, max_pixels: int, video_fps: float
 ) -> Dict[str, Any]:
-    # Handle images from dataset (both regular images and flattened video frames)
-    if "images" in multi_modal_data and multi_modal_data["images"] is not None:
-        # Check if it's a list of PIL images (what we expect from the dataset)
-        if isinstance(multi_modal_data["images"], list):
-            return {"image": multi_modal_data["images"]}
-    
-    # Return None if no valid multimodal data
+    # may convert image path to image object
+    images, videos = [], []
+    if "images" in multi_modal_data:
+        for image in multi_modal_data["images"]:
+            images.append(process_image(image, min_pixels, max_pixels))
+
+    if "videos" in multi_modal_data:
+        for video in multi_modal_data["videos"]:
+            videos.append(process_video(video, min_pixels, max_pixels, video_fps))
+
+    if len(images) != 0:
+        return {"image": images}
+
+    if len(videos) != 0:
+        return {"video": videos}
+
     return None
 
 
