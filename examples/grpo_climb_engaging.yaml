@@ -82,6 +82,7 @@ worker:
   reward:
     reward_type: batch
     reward_function: ./examples/reward_function/medical.py:medical_compute_score_batch
+    num_cpus: 8  # number of CPUs for reward function computation
 
 trainer:
   total_epochs: 3
