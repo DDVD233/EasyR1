@@ -171,46 +171,33 @@ class FSDPWorker(Worker):
         # Print summary
         self._print_memory_rank(f"\n[Memory Snapshot - {tag}]")
         self._print_memory_rank(f"  Role: {self.role}")
-        self._print_memory_rank(f"  TraceMalloc: {current / (1024**2):.2f} MB (peak: {peak / (1024**2):.2f} MB)")
         self._print_memory_rank(f"  GPU: {gpu_allocated:.2f} GB allocated (Δ{gpu_delta:+.2f}), {gpu_reserved:.2f} GB reserved, max: {gpu_max_allocated:.2f} GB")
-        self._print_memory_rank(f"  CPU: {cpu_percent:.1f}% ({cpu_used_gb:.2f} GB used, Δ{cpu_delta:+.2f})\n")
+        self._print_memory_rank(f"  CPU: {cpu_percent:.1f}% ({cpu_used_gb:.2f} GB used, Δ{cpu_delta:+.2f})")
         
-        # Print top memory allocations
+        # Print top Python memory allocations from tracemalloc
         if len(self.memory_snapshots) > 1:
             prev_snapshot = self.memory_snapshots[-2]['snapshot']
             top_stats = snapshot.compare_to(prev_snapshot, 'traceback')
             
-            significant_changes = [stat for stat in top_stats if abs(stat.size_diff) > 1024*1024]  # > 1MB
+            significant_changes = [stat for stat in top_stats if abs(stat.size_diff) > 10*1024*1024]  # > 10MB
             if significant_changes:
-                self._print_memory_rank(f"Top memory changes since {self.memory_snapshots[-2]['tag']}:")
-                for i, stat in enumerate(significant_changes[:10]):
-                    self._print_memory_rank(f"  #{i+1}: {stat.size_diff / (1024**2):+.2f} MB, {stat.count_diff:+d} blocks")
-                    for line in stat.traceback.format()[-2:]:
-                        self._print_memory_rank(f"      {line.strip()}")
+                self._print_memory_rank(f"\n  Top Python memory changes (>10MB):")
+                for i, stat in enumerate(significant_changes[:5]):
+                    self._print_memory_rank(f"    {stat.size_diff / (1024**2):+.2f} MB ({stat.count_diff:+d} blocks)")
+                    # Show just the file and line, not full traceback
+                    if stat.traceback:
+                        frame = stat.traceback[-1]
+                        self._print_memory_rank(f"      {frame.filename}:{frame.lineno}")
         
-        # Save detailed snapshot periodically or on significant changes
-        should_save = (self.update_count % 10 == 0 or 
-                      abs(gpu_delta) > 0.5 or  # GPU memory changed by >0.5GB
-                      abs(cpu_delta) > 1.0)    # CPU memory changed by >1GB
+        # Always print tensor info if GPU memory increased significantly
+        if abs(gpu_delta) > 0.1:  # More than 100MB change
+            self._print_memory_rank(f"\n  GPU Tensor Analysis:")
+            self._print_top_tensors()
         
-        if should_save:
-            snapshot_file = os.path.join(
-                self.rank_snapshot_dir,
-                f"snapshot_{self.role}_{self.update_count}_{tag}.pkl"
-            )
-            try:
-                with open(snapshot_file, 'wb') as f:
-                    pickle.dump({
-                        'tag': tag,
-                        'timestamp': datetime.now().isoformat(),
-                        'rank': self.rank,
-                        'role': self.role,
-                        'stats': snapshot.statistics('traceback')[:100],  # Top 100 allocations
-                        'memory_info': self.memory_snapshots[-1]
-                    }, f)
-                self._print_memory_rank(f"  Saved detailed snapshot to {snapshot_file}")
-            except Exception as e:
-                self._print_memory_rank(f"  Failed to save snapshot: {e}")
+        # Print largest objects by type
+        if self.update_count % 5 == 0 or abs(cpu_delta) > 0.5:
+            self._print_memory_rank(f"\n  Largest objects in memory:")
+            self._print_largest_objects()
         
         # Synchronize across all ranks to ensure consistent logging
         if dist.is_initialized():
@@ -281,6 +268,63 @@ class FSDPWorker(Worker):
                     self._print_memory_rank(f"    {shape}: {info['count']} tensors, {size_gb:.3f} GB total")
         except Exception as e:
             self._print_memory_rank(f"  Failed to get tensor info: {e}")
+    
+    def _print_top_tensors(self):
+        """Print top tensors by total memory usage (count * size)."""
+        try:
+            tensor_groups = {}
+            
+            for obj in gc.get_objects():
+                if torch.is_tensor(obj) and obj.is_cuda:
+                    size = obj.element_size() * obj.nelement()
+                    shape = tuple(obj.shape)
+                    dtype = str(obj.dtype)
+                    key = (shape, dtype)
+                    
+                    if key not in tensor_groups:
+                        tensor_groups[key] = {'count': 0, 'total_size': 0, 'single_size': size}
+                    tensor_groups[key]['count'] += 1
+                    tensor_groups[key]['total_size'] += size
+            
+            if tensor_groups:
+                # Sort by count * size to find tensors with many instances
+                sorted_by_count = sorted(tensor_groups.items(), 
+                                       key=lambda x: x[1]['count'] * x[1]['single_size'], 
+                                       reverse=True)[:5]
+                
+                for (shape, dtype), info in sorted_by_count:
+                    total_gb = info['total_size'] / (1024**3)
+                    single_mb = info['single_size'] / (1024**2)
+                    self._print_memory_rank(f"    {shape} {dtype}: {info['count']} x {single_mb:.1f}MB = {total_gb:.3f}GB")
+        except Exception as e:
+            self._print_memory_rank(f"  Failed to get top tensors: {e}")
+    
+    def _print_largest_objects(self):
+        """Print largest objects in memory by type."""
+        try:
+            import sys
+            from collections import defaultdict
+            
+            type_sizes = defaultdict(lambda: {'count': 0, 'size': 0})
+            
+            for obj in gc.get_objects():
+                try:
+                    obj_size = sys.getsizeof(obj)
+                    obj_type = type(obj).__name__
+                    type_sizes[obj_type]['count'] += 1
+                    type_sizes[obj_type]['size'] += obj_size
+                except:
+                    pass
+            
+            # Sort by total size
+            sorted_types = sorted(type_sizes.items(), key=lambda x: x[1]['size'], reverse=True)[:10]
+            
+            for obj_type, info in sorted_types:
+                size_mb = info['size'] / (1024**2)
+                if size_mb > 1:  # Only show types using more than 1MB
+                    self._print_memory_rank(f"    {obj_type}: {info['count']} objects, {size_mb:.1f} MB")
+        except Exception as e:
+            self._print_memory_rank(f"  Failed to get largest objects: {e}")
 
     def _init_dist_mesh(self, config: Union[ActorConfig, CriticConfig], role: Literal["actor", "critic"]):
         world_size = dist.get_world_size()
@@ -748,6 +792,9 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_sequences(self, prompts: DataProto):
         assert self._has_rollout
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"generate_sequences_start")
 
         meta_info = {
             "eos_token_id": self.generation_config.eos_token_id
@@ -764,11 +811,18 @@ class FSDPWorker(Worker):
         output = self.rollout_sharding_manager.postprocess_data(output)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"generate_sequences_end")
+        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_probs(self, data: DataProto):
         assert self._has_actor
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"compute_log_probs_start")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -797,6 +851,10 @@ class FSDPWorker(Worker):
             offload_fsdp_model(self.fsdp_module)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"compute_log_probs_end")
+        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -852,6 +910,10 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_critic(self, data: DataProto):
         assert self._has_critic
+        
+        if self.enable_memory_tracking:
+            self.update_count += 1
+            self._take_memory_snapshot(f"update_critic_start_{self.update_count}")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -892,4 +954,9 @@ class FSDPWorker(Worker):
             offload_fsdp_optimizer(optimizer=self.optimizer)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"update_critic_end_{self.update_count}")
+            self._check_for_memory_leaks()
+        
         return output
