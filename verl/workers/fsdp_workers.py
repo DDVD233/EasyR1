@@ -587,6 +587,7 @@ class FSDPWorker(Worker):
                 tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
             )
             output = self.ulysses_sharding_manager.postprocess_data(output)
+            print("Log probs computed. Postprocess data shape:", output.tensors["old_log_probs"].shape)
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module

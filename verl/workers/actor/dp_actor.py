@@ -210,6 +210,7 @@ class DataParallelPPOActor(BasePPOActor):
             log_probs_lst.append(log_probs)
 
         log_probs = torch.concat(log_probs_lst, dim=0)
+        print("Returned log_probs shape:", log_probs.shape)
         return log_probs
 
     def update_policy(self, data: DataProto) -> Dict[str, Any]:
