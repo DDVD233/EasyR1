@@ -26,6 +26,7 @@ from datasets import load_dataset
 from jinja2 import Template
 from PIL import Image
 from PIL.Image import Image as ImageObject
+import PIL
 from qwen_vl_utils.vision_process import fetch_video
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer, ProcessorMixin
@@ -123,35 +124,56 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
 def process_image(
     image: Union[Dict[str, Any], ImageObject, str], min_pixels: Optional[int], max_pixels: Optional[int]
 ) -> ImageObject:
-    if isinstance(image, str):
-        image = Image.open(image)
-    elif isinstance(image, dict):
-        image = Image.open(BytesIO(image["bytes"]))
-    elif isinstance(image, bytes):
-        image = Image.open(BytesIO(image))
+    try:
+        if isinstance(image, str):
+            image = Image.open(image)
+        elif isinstance(image, dict):
+            image = Image.open(BytesIO(image["bytes"]))
+        elif isinstance(image, bytes):
+            image = Image.open(BytesIO(image))
 
-    image.load()  # avoid "Too many open files" errors
-    if max_pixels is not None and (image.width * image.height) > max_pixels:
-        resize_factor = math.sqrt(max_pixels / (image.width * image.height))
-        width, height = int(image.width * resize_factor), int(image.height * resize_factor)
-        image = image.resize((width, height))
+        image.load()  # avoid "Too many open files" errors
+        if max_pixels is not None and (image.width * image.height) > max_pixels:
+            resize_factor = math.sqrt(max_pixels / (image.width * image.height))
+            width, height = int(image.width * resize_factor), int(image.height * resize_factor)
+            image = image.resize((width, height))
 
-    if min_pixels is not None and (image.width * image.height) < min_pixels:
-        resize_factor = math.sqrt(min_pixels / (image.width * image.height))
-        width, height = int(image.width * resize_factor), int(image.height * resize_factor)
-        image = image.resize((width, height))
+        if min_pixels is not None and (image.width * image.height) < min_pixels:
+            resize_factor = math.sqrt(min_pixels / (image.width * image.height))
+            width, height = int(image.width * resize_factor), int(image.height * resize_factor)
+            image = image.resize((width, height))
 
-    if image.mode != "RGB":
-        image = image.convert("RGB")
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
-    return image
+        return image
+    except (OSError, IOError, PIL.UnidentifiedImageError) as e:
+        logger.warning(f"Failed to load image: {str(e)}. Returning blank placeholder image.")
+        # Return a blank RGB image as placeholder
+        placeholder = Image.new('RGB', (224, 224), color='black')
+        return placeholder
+    except Exception as e:
+        logger.error(f"Unexpected error loading image: {str(e)}. Returning blank placeholder image.")
+        # Return a blank RGB image as placeholder
+        placeholder = Image.new('RGB', (224, 224), color='black')
+        return placeholder
 
 
 def process_video(
     video: str, min_pixels: Optional[int], max_pixels: Optional[int], video_fps: float, return_fps: bool = False
 ) -> Union[List[ImageObject], Tuple[List[ImageObject], List[float]]]:
-    vision_info = {"video": video, "min_pixels": min_pixels, "max_pixels": max_pixels, "fps": video_fps}
-    return fetch_video(vision_info, return_video_sample_fps=return_fps)
+    try:
+        vision_info = {"video": video, "min_pixels": min_pixels, "max_pixels": max_pixels, "fps": video_fps}
+        return fetch_video(vision_info, return_video_sample_fps=return_fps)
+    except Exception as e:
+        logger.warning(f"Failed to load video {video}: {str(e)}. Returning single black frame as placeholder.")
+        # Return a single black frame as placeholder
+        placeholder_frame = Image.new('RGB', (224, 224), color='black')
+        if return_fps:
+            # Return a single frame with default fps
+            return [placeholder_frame], [video_fps]
+        else:
+            return [placeholder_frame]
 
 
 def resize_bbox(bbox, original_width, original_height, new_width, new_height):
@@ -329,11 +351,15 @@ class RLHFDataset(Dataset):
 
             for image in images:
                 # Get original dimensions before processing
-                if isinstance(image, str):
-                    img = Image.open(image)
-                else:
-                    img = image
-                original_dimensions.append((img.width, img.height))
+                try:
+                    if isinstance(image, str):
+                        img = Image.open(image)
+                    else:
+                        img = image
+                    original_dimensions.append((img.width, img.height))
+                except Exception as e:
+                    logger.warning(f"Failed to get dimensions for image: {str(e)}. Using default dimensions.")
+                    original_dimensions.append((224, 224))
                 
                 # Process the image
                 processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
