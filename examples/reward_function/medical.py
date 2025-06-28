@@ -305,7 +305,6 @@ def medical_compute_score_batch(batch_inputs: List[Dict]) -> List[Dict[str, floa
         ground_truth = input_dict["ground_truth"]
         segmentation_mask = input_dict.get("segmentation_mask")
         bbox = input_dict.get("bbox")
-        print(f"{i}/{len(batch_inputs)} Processing input...")
         
         # Calculate standard score
         answer = extract_boxed_content(predict_str)
@@ -358,7 +357,7 @@ def medical_compute_score_batch(batch_inputs: List[Dict]) -> List[Dict[str, floa
                         if isinstance(item, dict) and "bbox_2d" in item:
                             pred_bboxes.append(item["bbox_2d"])
                 
-                if random.random() < 0.0005:  # print every 0.5%
+                if random.random() < 0.005:  # print every 0.5%
                     print("[Bounding Box] ", json_data)
                     print("[Formatted Bounding Box] ", pred_bboxes)
                     print("[GT Bounding Box] ", bbox)
