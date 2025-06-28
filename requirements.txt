@@ -19,6 +19,5 @@ vllm>=0.8.0
 wandb
 timm
 tensorboard
-heavyball
 wfdb
 scikit-learn
