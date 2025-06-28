@@ -336,34 +336,7 @@ class RLHFDataset(Dataset):
                 
                 # Process the image
                 processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
-            
-            # Ensure the prompt has the correct number of <image> tags
-            prompt_str = example[self.prompt_key]
-            if self.format_prompt:
-                format_prompt = Template(self.format_prompt.strip())
-                prompt_str = format_prompt.render(content=prompt_str)
-            
-            # Count existing image tokens and adjust if needed
-            image_count_in_prompt = prompt_str.count("<image>")
-            image_count = len(processed_images)
-            
-            if image_count_in_prompt == 0 and image_count > 0:
-                # Add image token at the beginning if none exists
-                prompt_str = "<image> " + prompt_str
-                image_count_in_prompt = 1
-            
-            if image_count > 1 and image_count_in_prompt < image_count:
-                # Add more image tokens to match the number of images
-                missing_count = image_count - image_count_in_prompt
-                prompt_str = prompt_str.replace("<image>", "<image> " * (missing_count + 1), 1)
-            elif image_count_in_prompt > image_count and image_count > 0:
-                # Remove excess image tokens
-                excess_count = image_count_in_prompt - image_count
-                for _ in range(excess_count):
-                    prompt_str = prompt_str.replace("<image>", "", 1)
-            
-            # Rebuild messages with corrected prompt
-            example[self.prompt_key] = prompt_str
+
             messages = self._build_messages(example)
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
