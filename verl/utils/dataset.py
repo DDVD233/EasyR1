@@ -103,12 +103,13 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
                     # Handle unexpected shapes
                     padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
 
-        # Add padded segmentation masks to non_tensors
-        non_tensors["segmentation_mask"] = np.stack(padded_masks, axis=0)
+        # Convert padded segmentation masks to tensor and add to tensors
+        tensors["segmentation_mask"] = torch.from_numpy(np.stack(padded_masks, axis=0)).float()
 
     # Stack other tensors
     for key, value in tensors.items():
-        tensors[key] = torch.stack(value, dim=0)
+        if key != "segmentation_mask":  # We've already handled segmentation masks
+            tensors[key] = torch.stack(value, dim=0)
 
     # Convert other non-tensors to arrays
     for key, value in non_tensors.items():
