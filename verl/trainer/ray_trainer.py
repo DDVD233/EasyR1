@@ -594,6 +594,7 @@ class RayPPOTrainer:
                 # compute reward
                 if "token_level_scores" not in batch.batch:
                     with timer("reward", timing_raw):
+                        print("Start computing reward...")
                         reward_ref = self.reward_fn.compute_reward.remote(batch)
 
                 # recompute old_log_probs

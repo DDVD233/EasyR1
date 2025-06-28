@@ -94,6 +94,7 @@ class FunctionRewardManager:
                 segmentation_mask = data.batch["segmentation_mask"]
                 bounding_box = data.batch["bbox"]
                 score = self.reward_fn(response_str, ground_truth, segmentation_mask, bounding_box)
+                print("Calculated medical reward score:", score)
                 reward_tensor[i, valid_response_length - 1] = score["overall"]
             else:
                 # Standard reward function interface
