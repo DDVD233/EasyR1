@@ -452,16 +452,16 @@ def compute_metrics_by_data_source(
         for metric_name, metric_value in global_metrics.items():
             result[f"val/{metric_name}"] = metric_value
 
-    gender_results = gender(predictions, ground_truths, demographics)
-    for k, v in gender_results.items():
-        result[f"fairness/gender/{k}"] = v
-
-    age_results = age(predictions, ground_truths, demographics)
-    for k, v in age_results.items():
-        result[f"fairness/age/{k}"] = v
-
-    parent_results = parent(predictions, ground_truths, demographics)
-    for k, v in parent_results.items():
-        result[f"fairness/parent/{k}"] = v
+    # gender_results = gender(predictions, ground_truths, demographics)
+    # for k, v in gender_results.items():
+    #     result[f"fairness/gender/{k}"] = v
+    #
+    # age_results = age(predictions, ground_truths, demographics)
+    # for k, v in age_results.items():
+    #     result[f"fairness/age/{k}"] = v
+    #
+    # parent_results = parent(predictions, ground_truths, demographics)
+    # for k, v in parent_results.items():
+    #     result[f"fairness/parent/{k}"] = v
 
     return result
