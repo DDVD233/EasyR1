@@ -518,6 +518,8 @@ class RLHFDataset(Dataset):
             vision_path = example['time_series'][0] if 'time_series' in example and len(example['time_series']) != 0 else None
             is_timeseries = True
         prompt_str = example[self.prompt_key]
+        if 'demo' in example:
+            print(f"Demo example found: {example['demo']}. Using prompt: {prompt_str}")
 
         if 'How long will the patient stay in the hospital?' in prompt_str:
             example["data_source"] = "multimodal"
