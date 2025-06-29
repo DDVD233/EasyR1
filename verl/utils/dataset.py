@@ -510,7 +510,7 @@ class RLHFDataset(Dataset):
 
         # Set vision_path to a nonempty vision path
         # Or empty if both vision paths are empty
-        vision_path = example['images'] if len(example['images']) != 0 else example.get('videos', [])
+        vision_path = example['images'] if 'images' in example and len(example['images']) != 0 else example.get('videos', [])
         ts_path = example.get('time-series', [])
         if ts_path is None:
             ts_path = []
