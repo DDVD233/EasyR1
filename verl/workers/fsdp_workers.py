@@ -51,7 +51,7 @@ from ..utils.fsdp_utils import (
     offload_fsdp_model,
     offload_fsdp_optimizer,
 )
-from ..utils.model_utils import print_gpu_memory_usage, print_model_size
+from ..utils.model_utils import print_model_size
 from ..utils.tokenizer import get_processor, get_tokenizer
 from ..utils.torch_dtypes import PrecisionType
 from ..utils.torch_functional import AnyPrecisionAdamW, get_constant_schedule_with_warmup
@@ -59,6 +59,11 @@ from .config import ActorConfig, CriticConfig, FSDPConfig, ModelConfig, OptimCon
 from .rollout import vLLMRollout
 from .sharding_manager import FSDPVLLMShardingManager
 from .sharding_manager.fsdp_ulysses import FSDPUlyssesShardingManager
+import tracemalloc
+import gc
+import os
+from datetime import datetime
+import pickle
 
 
 class FSDPWorker(Worker):
@@ -71,6 +76,23 @@ class FSDPWorker(Worker):
         self.config = config
         self.role = role
         self._cache = {}
+        
+        # Initialize memory tracking for ALL ranks
+        self.enable_memory_tracking = os.environ.get('ENABLE_MEMORY_TRACKING', '1') == '1'
+        self.memory_snapshot_dir = os.environ.get('MEMORY_SNAPSHOT_DIR', '/tmp/memory_snapshots')
+        self.memory_log_all_ranks = os.environ.get('MEMORY_LOG_ALL_RANKS', '1') == '1'  # Log from all ranks by default
+        
+        if self.enable_memory_tracking:
+            # Create rank-specific directory
+            self.rank_snapshot_dir = os.path.join(self.memory_snapshot_dir, f"rank_{self.rank}")
+            os.makedirs(self.rank_snapshot_dir, exist_ok=True)
+            tracemalloc.start()
+            self.memory_snapshots = []
+            self.update_count = 0
+            self._print_memory_rank(f"Memory tracking enabled for rank {self.rank}. Snapshots will be saved to {self.rank_snapshot_dir}")
+            
+            # Initialize memory baseline
+            self.baseline_cpu_memory = psutil.virtual_memory().used / (1024**3)
 
         if not dist.is_initialized():
             dist.init_process_group(backend="nccl")
@@ -104,6 +126,157 @@ class FSDPWorker(Worker):
 
         if self._has_ref:  # NOTE: it seems that manual offload is slower than FSDP offload
             self._use_ref_param_offload = self.config.ref.offload.offload_params
+    
+    def _print_memory_rank(self, *args, **kwargs):
+        """Print memory debug info for all ranks or just rank 0."""
+        if self.memory_log_all_ranks or self.rank == 0:
+            print(f"[Rank {self.rank}]", *args, **kwargs)
+    
+    def _take_memory_snapshot(self, tag: str):
+        """Take a detailed memory snapshot for debugging."""
+        if not self.enable_memory_tracking:
+            return
+        
+        # Get current memory usage
+        current, peak = tracemalloc.get_traced_memory()
+        cpu_percent = psutil.virtual_memory().percent
+        cpu_used_gb = psutil.virtual_memory().used / (1024**3)
+        
+        # Calculate deltas from baseline
+        cpu_delta = cpu_used_gb - self.baseline_cpu_memory
+        
+        snapshot = tracemalloc.take_snapshot()
+        self.memory_snapshots.append({
+            'tag': tag,
+            'timestamp': datetime.now().isoformat(),
+            'rank': self.rank,
+            'role': self.role,
+            'tracemalloc_current_mb': current / (1024**2),
+            'tracemalloc_peak_mb': peak / (1024**2),
+            'cpu_percent': cpu_percent,
+            'cpu_used_gb': cpu_used_gb,
+            'cpu_delta_gb': cpu_delta,
+            'snapshot': snapshot
+        })
+        
+        # Print summary
+        self._print_memory_rank(f"\n[Memory Snapshot - {tag}]")
+        self._print_memory_rank(f"  Role: {self.role}")
+        self._print_memory_rank(f"  CPU: {cpu_percent:.1f}% ({cpu_used_gb:.2f} GB used, Δ{cpu_delta:+.2f})")
+        self._print_memory_rank(f"  Tracemalloc: {current / (1024**2):.2f} MB current, {peak / (1024**2):.2f} MB peak")
+        
+        # Print top Python memory allocations from tracemalloc
+        if len(self.memory_snapshots) > 1:
+            prev_snapshot = self.memory_snapshots[-2]['snapshot']
+            top_stats = snapshot.compare_to(prev_snapshot, 'traceback')
+            
+            significant_changes = [stat for stat in top_stats if abs(stat.size_diff) > 10*1024*1024]  # > 10MB
+            if significant_changes:
+                self._print_memory_rank(f"\n  Top Python memory changes (>10MB):")
+                for i, stat in enumerate(significant_changes[:5]):
+                    self._print_memory_rank(f"    {stat.size_diff / (1024**2):+.2f} MB ({stat.count_diff:+d} blocks)")
+                    # Show just the file and line, not full traceback
+                    if stat.traceback:
+                        frame = stat.traceback[-1]
+                        self._print_memory_rank(f"      {frame.filename}:{frame.lineno}")
+        
+        # Print top 10 memory users by class
+        self._print_memory_rank(f"\n  Top 10 memory users by class:")
+        self._print_top_memory_by_class()
+        
+        # Synchronize across all ranks to ensure consistent logging
+        if dist.is_initialized():
+            dist.barrier()
+    
+    def _check_for_memory_leaks(self):
+        """Check for potential memory leaks."""
+        if not self.enable_memory_tracking or len(self.memory_snapshots) < 5:
+            return
+        
+        # Check if memory is consistently increasing
+        recent_snapshots = self.memory_snapshots[-5:]
+        cpu_trend = [s['cpu_used_gb'] for s in recent_snapshots]
+        
+        cpu_increasing = all(cpu_trend[i] <= cpu_trend[i+1] for i in range(len(cpu_trend)-1))
+        
+        # Calculate total increase
+        cpu_increase = cpu_trend[-1] - cpu_trend[0]
+        
+        if cpu_increasing and cpu_increase > 0.5:
+            self._print_memory_rank(f"\n[WARNING] Potential memory leak detected on rank {self.rank}!")
+            self._print_memory_rank(f"  CPU memory increasing: {' -> '.join(f'{x:.2f}GB' for x in cpu_trend)}")
+            self._print_memory_rank(f"  Total increase: {cpu_increase:.2f} GB")
+            
+            # Print top memory users by class
+            self._print_memory_rank(f"\n  Memory usage by class:")
+            self._print_top_memory_by_class()
+            
+            # Force garbage collection
+            self._print_memory_rank("  Running garbage collection...")
+            collected = gc.collect()
+            self._print_memory_rank(f"  Collected {collected} objects")
+            torch.cuda.empty_cache()
+            
+            # Take another snapshot after GC
+            self._take_memory_snapshot("after_gc")
+    
+    def _print_top_memory_by_class(self):
+        """Print top 10 memory users by class with total size for all objects of each class."""
+        try:
+            import sys
+            from collections import defaultdict
+            
+            # Track total size by class
+            class_sizes = defaultdict(lambda: {'count': 0, 'total_size': 0})
+            
+            for obj in gc.get_objects():
+                try:
+                    # Get object size
+                    obj_size = sys.getsizeof(obj)
+                    
+                    # Get class name with module for better identification
+                    obj_class = obj.__class__
+                    class_name = f"{obj_class.__module__}.{obj_class.__name__}" if hasattr(obj_class, '__module__') else obj_class.__name__
+                    
+                    # Special handling for tensors to include device info
+                    if torch.is_tensor(obj):
+                        device = str(obj.device)
+                        dtype = str(obj.dtype)
+                        shape = str(tuple(obj.shape))
+                        class_name = f"torch.Tensor[{device},{dtype},{shape}]"
+                        # For tensors, use actual memory size
+                        if obj.is_cuda:
+                            obj_size = obj.element_size() * obj.nelement()
+                    
+                    class_sizes[class_name]['count'] += 1
+                    class_sizes[class_name]['total_size'] += obj_size
+                except:
+                    # Skip objects we can't get size of
+                    pass
+            
+            # Sort by total size and get top 10
+            sorted_classes = sorted(class_sizes.items(), key=lambda x: x[1]['total_size'], reverse=True)[:10]
+            
+            # Print results
+            total_tracked = sum(info['total_size'] for _, info in class_sizes.items())
+            self._print_memory_rank(f"    Total tracked memory: {total_tracked / (1024**3):.3f} GB")
+            self._print_memory_rank(f"    Top 10 classes by total memory:")
+            
+            for i, (class_name, info) in enumerate(sorted_classes, 1):
+                size_gb = info['total_size'] / (1024**3)
+                size_mb = info['total_size'] / (1024**2)
+                
+                # Use GB for large sizes, MB for smaller
+                if size_gb >= 0.1:
+                    size_str = f"{size_gb:.3f} GB"
+                else:
+                    size_str = f"{size_mb:.1f} MB"
+                
+                percentage = (info['total_size'] / total_tracked * 100) if total_tracked > 0 else 0
+                self._print_memory_rank(f"    {i:2d}. {class_name}: {info['count']:,} objects, {size_str} ({percentage:.1f}%)")
+                
+        except Exception as e:
+            self._print_memory_rank(f"  Failed to get memory by class: {e}")
 
     def _init_dist_mesh(self, config: Union[ActorConfig, CriticConfig], role: Literal["actor", "critic"]):
         world_size = dist.get_world_size()
@@ -241,7 +414,6 @@ class FSDPWorker(Worker):
 
         dist.barrier()
         print_model_size(model)
-        print_gpu_memory_usage("After huggingface model init")
         mixed_precision = MixedPrecision(
             param_dtype=PrecisionType.to_dtype(fsdp_config.mp_param_dtype),
             reduce_dtype=PrecisionType.to_dtype(fsdp_config.mp_reduce_dtype),
@@ -286,7 +458,6 @@ class FSDPWorker(Worker):
             use_orig_params=fsdp_config.use_orig_params,
             device_mesh=self.device_mesh,
         )
-        print_gpu_memory_usage("After FSDP module init")
 
         if role in ["actor", "critic"]:
             self.fsdp_module = fsdp_module
@@ -316,19 +487,15 @@ class FSDPWorker(Worker):
             self.lr_scheduler = get_constant_schedule_with_warmup(
                 optimizer=self.optimizer, num_warmup_steps=num_warmup_steps
             )
-            print_gpu_memory_usage("After optimizer init")
             if self._use_param_offload:
                 offload_fsdp_model(self.fsdp_module)
-                print_gpu_memory_usage(f"After offload {role} model during init")
 
             if self._use_optimizer_offload:
                 offload_fsdp_optimizer(optimizer=self.optimizer)
-                print_gpu_memory_usage(f"After offload {role} optimizer during init")
         else:
             self.ref_fsdp_module = fsdp_module
             if self._use_ref_param_offload:
                 offload_fsdp_model(self.ref_fsdp_module)
-                print_gpu_memory_usage(f"After offload {role} model during init")
 
     def _build_rollout(self) -> None:
         tp_size = self.config.rollout.tensor_parallel_size
@@ -349,7 +516,6 @@ class FSDPWorker(Worker):
             device_mesh=rollout_device_mesh,
             use_param_offload=self._use_param_offload,
         )
-        print_gpu_memory_usage("After vllm init")
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def init_model(self):
@@ -448,6 +614,8 @@ class FSDPWorker(Worker):
             return
 
         if "uid" in self._cache and not np.all(data.non_tensor_batch["uid"] == self._cache["uid"]):
+            if self.enable_memory_tracking:
+                self._print_memory_rank(f"  Clearing cache due to UID mismatch")
             self._cache.clear()
 
         if "multi_modal_inputs" not in self._cache:
@@ -489,6 +657,10 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_actor(self, data: DataProto):
         assert self._has_actor
+        
+        if self.enable_memory_tracking:
+            self.update_count += 1
+            self._take_memory_snapshot(f"update_actor_start_{self.update_count}")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -510,12 +682,6 @@ class FSDPWorker(Worker):
             metrics["perf/mfu_actor"] = (
                 estimated_flops * self.config.actor.ppo_epochs / (promised_flops * self.world_size)
             )
-            metrics["perf/max_memory_allocated_gb"] = (
-                torch.cuda.max_memory_allocated() - self.rollout_sharding_manager.freed_bytes
-            ) / (1024**3)
-            metrics["perf/max_memory_reserved_gb"] = (
-                torch.cuda.max_memory_reserved() - self.rollout_sharding_manager.freed_bytes
-            ) / (1024**3)
             metrics["perf/cpu_memory_used_gb"] = psutil.virtual_memory().used / (1024**3)
 
             self.lr_scheduler.step()
@@ -536,6 +702,22 @@ class FSDPWorker(Worker):
             offload_fsdp_optimizer(optimizer=self.optimizer)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"update_actor_end_{self.update_count}")
+            self._check_for_memory_leaks()
+            
+            # Clear any cached data that might be holding references
+            if self.update_count % 5 == 0:
+                self._print_memory_rank(f"\n[Clearing caches at update {self.update_count}]")
+                if hasattr(self, '_cache'):
+                    cache_size = len(str(self._cache))
+                    self._print_memory_rank(f"  Cache size before clear: ~{cache_size} bytes")
+                    self._cache.clear()
+                gc.collect()
+                torch.cuda.empty_cache()
+                self._take_memory_snapshot(f"after_cache_clear_{self.update_count}")
+        
         return output
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
@@ -549,6 +731,9 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_sequences(self, prompts: DataProto):
         assert self._has_rollout
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"generate_sequences_start")
 
         meta_info = {
             "eos_token_id": self.generation_config.eos_token_id
@@ -565,11 +750,18 @@ class FSDPWorker(Worker):
         output = self.rollout_sharding_manager.postprocess_data(output)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"generate_sequences_end")
+        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_probs(self, data: DataProto):
         assert self._has_actor
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"compute_log_probs_start")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -598,6 +790,10 @@ class FSDPWorker(Worker):
             offload_fsdp_model(self.fsdp_module)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"compute_log_probs_end")
+        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -653,6 +849,10 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_critic(self, data: DataProto):
         assert self._has_critic
+        
+        if self.enable_memory_tracking:
+            self.update_count += 1
+            self._take_memory_snapshot(f"update_critic_start_{self.update_count}")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -693,4 +893,9 @@ class FSDPWorker(Worker):
             offload_fsdp_optimizer(optimizer=self.optimizer)
 
         output = output.to("cpu")
+        
+        if self.enable_memory_tracking:
+            self._take_memory_snapshot(f"update_critic_end_{self.update_count}")
+            self._check_for_memory_leaks()
+        
         return output
