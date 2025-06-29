@@ -519,25 +519,25 @@ class RLHFDataset(Dataset):
             is_timeseries = True
         prompt_str = example[self.prompt_key]
 
-        try:
-            if 'How long will the patient stay in the hospital?' in prompt_str:
-                example["data_source"] = "multimodal"
-                example["dataset"] = "los_prediction"
-            elif 'Will the patient survive for at least 48 hours?' in prompt_str:
-                example["data_source"] = "multimodal"
-                example["dataset"] = "48_ihm"
-            elif len(vision_path) != 0:
-                vision_path = vision_path[0]
-                example["data_source"] = vision_path.split("/")[0]
-                example["dataset"] = vision_path.split("/")[1]
-            elif is_timeseries:
-                example["data_source"] = "ecg"
-                # dataset already set in json
-            else:
-                raise ValueError("No modality found.")
-        except:
-            example["data_source"] = "unknown"
-            example["dataset"] = "unknown"
+        # try:
+        if 'How long will the patient stay in the hospital?' in prompt_str:
+            example["data_source"] = "multimodal"
+            example["dataset"] = "los_prediction"
+        elif 'Will the patient survive for at least 48 hours?' in prompt_str:
+            example["data_source"] = "multimodal"
+            example["dataset"] = "48_ihm"
+        elif len(vision_path) != 0:
+            vision_path = vision_path[0]
+            example["data_source"] = vision_path.split("/")[0]
+            example["dataset"] = vision_path.split("/")[1]
+        elif is_timeseries:
+            example["data_source"] = "ecg"
+            # dataset already set in json
+        else:
+            raise ValueError("No modality found.")
+        # except:
+        #     example["data_source"] = "unknown"
+        #     example["dataset"] = "unknown"
 
         example['vision_path'] = vision_path
 
