@@ -345,7 +345,7 @@ class RLHFDataset(Dataset):
         processed_images = []  # Initialize for all cases
 
         if self.image_key in example:
-            images = example.pop(self.image_key)
+            images = example.get(self.image_key, '')
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 
@@ -372,7 +372,7 @@ class RLHFDataset(Dataset):
             # Store the original image paths/objects for vLLM rollout worker
             example["multi_modal_data"] = {"images": images} if images else {}
         elif self.video_key in example:
-            videos = example.pop(self.video_key)
+            videos = example.get(self.video_key, '')
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
