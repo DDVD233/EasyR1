@@ -47,6 +47,7 @@ from . import core_algos
 from .config import PPOConfig
 from .core_algos import AdvantageEstimator, FixedKLController, KLController, compute_kl, get_kl_controller
 from .metrics import compute_data_metrics, compute_throughout_metrics, compute_timing_metrics, reduce_metrics
+from examples.reward_function.evaluation import compute_metrics_by_data_source
 
 
 class Role(IntEnum):
@@ -370,32 +371,74 @@ class RayPPOTrainer:
             print(f"No dataloader state found at {dataloader_path}, will start from scratch.")
 
     def _maybe_log_val_generations(
-        self, inputs: List[str], outputs: List[str], labels: List[str], scores: List[float]
+        self, inputs: List[str], outputs: List[str], labels: List[str], scores: List[float],
+            datasets: List[str], datapaths: List[str]
     ) -> None:
         """Log a table of validation samples"""
         if self.config.trainer.val_generations_to_log <= 0:
             return
 
         # Create tuples of (input, output, score) and sort by input text
-        samples = list(zip(inputs, outputs, labels, scores))
-        samples.sort(key=lambda x: x[0])  # Sort by input text
+        # samples = list(zip(inputs, outputs, labels, scores))
+        samples = []
+        samples_dict = []
+        for i in range(len(inputs)):
+            inputs_full = f"Dataset: {datasets[i]} \nDatapath: {datapaths[i]} \n{inputs[i]}"
+            samples.append((inputs_full, outputs[i], labels[i], scores[i]))
+            samples_dict.append({
+                "input": inputs_full,
+                "output": outputs[i],
+                "label": labels[i],
+                "score": scores[i],
+            })
+        samples.sort(key=lambda x: x[3], reverse=True)  # Sort by scores in descending order
+        samples_dict.sort(key=lambda x: x["score"], reverse=True)
+
+        # also save it to a json file by formatting it as dict
+        with open(f"val_generations_{self.global_step}.json", "w") as f:
+            import json
+            json.dump(samples_dict, f, indent=4)
+
 
         # Use fixed random seed for deterministic shuffling
-        rng = np.random.RandomState(42)
-        rng.shuffle(samples)
+        # rng = np.random.RandomState(42)
+        # rng.shuffle(samples)
 
         samples = samples[: self.config.trainer.val_generations_to_log]
         self.logger.log_generation(samples, self.global_step)
 
     def _validate(self) -> Dict[str, Any]:
         reward_tensor_lst = []
+        reward_metrics_lst = defaultdict(list)
         # Lists to collect samples for the table
         sample_inputs, sample_outputs, sample_labels, sample_scores = [], [], [], []
-        reward_metrics_lst = defaultdict(list)
+        sample_datasets, sample_datapaths = [], []
+        
+        # New lists for metric calculation
+        all_predictions = []
+        all_ground_truths = []
+        all_data_sources = []
+        all_demographics = []
+        all_datasets = []
+        data_source_lst = []
         print("Start validation...")
         self.actor_rollout_ref_wg.prepare_rollout_engine()
         for batch_dict in self.val_dataloader:
             test_batch = DataProto.from_single_dict(batch_dict)
+            
+            # Store original inputs and ground truths
+            input_ids = test_batch.batch["input_ids"]
+            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
+            sample_inputs.extend(input_texts)
+            ground_truths = test_batch.non_tensor_batch["answer"]
+            data_sources = test_batch.non_tensor_batch.get("data_source", ["unknown"] * len(input_texts))
+            datasets = test_batch.non_tensor_batch.get("dataset", ["unknown"] * len(input_texts))
+            demographics = test_batch.non_tensor_batch.get("demo", ["unknown"] * len(input_texts))
+            data_paths = test_batch.non_tensor_batch.get("vision_path", ["unknown"] * len(input_texts))
+            if isinstance(data_paths, np.ndarray):
+                data_paths = data_paths.tolist()
+            sample_datapaths.extend(data_paths)
+            sample_datasets.extend(datasets)
             test_gen_batch = test_batch.pop(
                 batch_keys=["input_ids", "attention_mask", "position_ids"],
                 non_tensor_batch_keys=["raw_prompt_ids", "multi_modal_data"],
@@ -417,27 +460,58 @@ class RayPPOTrainer:
             # evaluate using reward_function
             reward_tensor, reward_metrics = ray.get(self.val_reward_fn.compute_reward.remote(test_batch))
 
-            # store generations
-            input_ids = test_batch.batch["prompts"]
-            input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
+            # Store generated outputs
             output_ids = test_batch.batch["responses"]
             output_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in output_ids]
-            scores = reward_tensor.sum(-1).cpu().tolist()
-            sample_inputs.extend(input_texts)
             sample_outputs.extend(output_texts)
             sample_labels.extend(test_batch.non_tensor_batch["ground_truth"].tolist())
+            
+            # Collect for metrics calculation
+            all_predictions.extend(output_texts)
+            all_ground_truths.extend(ground_truths)
+            all_data_sources.extend(data_sources)
+            all_datasets.extend(datasets)
+            all_demographics.extend(demographics)
+            
+            # Store scores
+            scores = reward_tensor.sum(-1).cpu().tolist()
             sample_scores.extend(scores)
 
             reward_tensor_lst.append(reward_tensor)
             for key, value in reward_metrics.items():
                 reward_metrics_lst[key].extend(value)
+            data_source_lst.append(
+                test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0])
+            )
 
         self.actor_rollout_ref_wg.release_rollout_engine()
-        self._maybe_log_val_generations(sample_inputs, sample_outputs, sample_labels, sample_scores)
+        
+        reward_tensor = torch.cat(reward_tensor_lst, dim=0).sum(-1).cpu()  # (batch_size,)
+        data_sources = np.concatenate(data_source_lst, axis=0)
+        
+        # Evaluate test_score based on data source
+        data_source_reward = {}
+        for i in range(reward_tensor.shape[0]):
+            data_source = data_sources[i]
+            if data_source not in data_source_reward:
+                data_source_reward[data_source] = []
+            data_source_reward[data_source].append(reward_tensor[i].item())
+        
+        metric_dict = {}
+        for data_source, rewards in data_source_reward.items():
+            metric_dict[f"val/test_score/{data_source}"] = np.mean(rewards)
+        
+        # Per data source metrics
+        metrics = compute_metrics_by_data_source(all_predictions, all_ground_truths,
+                                                 all_data_sources, all_datasets, all_demographics)
+        metric_dict.update(**metrics)
+        
+        self._maybe_log_val_generations(sample_inputs, sample_outputs, sample_labels, sample_scores,
+                                        sample_datasets, sample_datapaths)
         self.val_reward_score = torch.cat(reward_tensor_lst, dim=0).sum(-1).mean().item()
         val_reward_metrics = {f"val/{key}_reward": value for key, value in reduce_metrics(reward_metrics_lst).items()}
         print("Finish validation.")
-        return {"val/reward_score": self.val_reward_score, **val_reward_metrics}
+        return {"val/reward_score": self.val_reward_score, **val_reward_metrics, **metric_dict}
 
     def _balance_batch(self, batch: DataProto, metrics: Dict[str, Any], logging_prefix: str = "global_seqlen") -> None:
         """Reorder the data on single controller such that each dp rank gets similar total tokens"""
