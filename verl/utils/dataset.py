@@ -526,7 +526,6 @@ class RLHFDataset(Dataset):
             example["data_source"] = "multimodal"
             example["dataset"] = "48_ihm"
         elif len(vision_path) != 0:
-            vision_path = vision_path[0]
             try:
                 example["data_source"] = vision_path.split("/")[0]
                 example["dataset"] = vision_path.split("/")[1]
