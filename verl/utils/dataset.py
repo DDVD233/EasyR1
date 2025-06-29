@@ -534,7 +534,7 @@ class RLHFDataset(Dataset):
             except IndexError:
                 example["data_source"] = "unknown"
                 example["dataset"] = "unknown"
-                print(f"Failed to parse vision path: {vision_path}. Using default values.")
+                print(f"Failed to parse vision path: {vision_path}. The annotation is {example}. Using default values.")
         elif is_timeseries:
             example["data_source"] = "ecg"
             # dataset already set in json
