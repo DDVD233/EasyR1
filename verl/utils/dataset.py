@@ -520,7 +520,6 @@ class RLHFDataset(Dataset):
         prompt_str = example[self.prompt_key]
         print(vision_path)
 
-        # try:
         if 'How long will the patient stay in the hospital?' in prompt_str:
             example["data_source"] = "multimodal"
             example["dataset"] = "los_prediction"
@@ -529,16 +528,18 @@ class RLHFDataset(Dataset):
             example["dataset"] = "48_ihm"
         elif len(vision_path) != 0:
             vision_path = vision_path[0]
-            example["data_source"] = vision_path.split("/")[0]
-            example["dataset"] = vision_path.split("/")[1]
+            try:
+                example["data_source"] = vision_path.split("/")[0]
+                example["dataset"] = vision_path.split("/")[1]
+            except IndexError:
+                example["data_source"] = "unknown"
+                example["dataset"] = "unknown"
+                print(f"Failed to parse vision path: {vision_path}. Using default values.")
         elif is_timeseries:
             example["data_source"] = "ecg"
             # dataset already set in json
         else:
             raise ValueError("No modality found.")
-        # except:
-        #     example["data_source"] = "unknown"
-        #     example["dataset"] = "unknown"
 
         example['vision_path'] = vision_path
 
