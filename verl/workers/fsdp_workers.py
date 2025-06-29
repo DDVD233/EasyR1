@@ -51,7 +51,7 @@ from ..utils.fsdp_utils import (
     offload_fsdp_model,
     offload_fsdp_optimizer,
 )
-from ..utils.model_utils import print_gpu_memory_usage, print_model_size
+from ..utils.model_utils import print_model_size
 from ..utils.tokenizer import get_processor, get_tokenizer
 from ..utils.torch_dtypes import PrecisionType
 from ..utils.torch_functional import AnyPrecisionAdamW, get_constant_schedule_with_warmup
@@ -92,7 +92,6 @@ class FSDPWorker(Worker):
             self._print_memory_rank(f"Memory tracking enabled for rank {self.rank}. Snapshots will be saved to {self.rank_snapshot_dir}")
             
             # Initialize memory baseline
-            self.baseline_gpu_memory = torch.cuda.memory_allocated() / (1024**3)
             self.baseline_cpu_memory = psutil.virtual_memory().used / (1024**3)
 
         if not dist.is_initialized():
@@ -140,14 +139,10 @@ class FSDPWorker(Worker):
         
         # Get current memory usage
         current, peak = tracemalloc.get_traced_memory()
-        gpu_allocated = torch.cuda.memory_allocated() / (1024**3)
-        gpu_reserved = torch.cuda.memory_reserved() / (1024**3)
-        gpu_max_allocated = torch.cuda.max_memory_allocated() / (1024**3)
         cpu_percent = psutil.virtual_memory().percent
         cpu_used_gb = psutil.virtual_memory().used / (1024**3)
         
         # Calculate deltas from baseline
-        gpu_delta = gpu_allocated - self.baseline_gpu_memory
         cpu_delta = cpu_used_gb - self.baseline_cpu_memory
         
         snapshot = tracemalloc.take_snapshot()
@@ -158,10 +153,6 @@ class FSDPWorker(Worker):
             'role': self.role,
             'tracemalloc_current_mb': current / (1024**2),
             'tracemalloc_peak_mb': peak / (1024**2),
-            'gpu_allocated_gb': gpu_allocated,
-            'gpu_reserved_gb': gpu_reserved,
-            'gpu_max_allocated_gb': gpu_max_allocated,
-            'gpu_delta_gb': gpu_delta,
             'cpu_percent': cpu_percent,
             'cpu_used_gb': cpu_used_gb,
             'cpu_delta_gb': cpu_delta,
@@ -171,8 +162,8 @@ class FSDPWorker(Worker):
         # Print summary
         self._print_memory_rank(f"\n[Memory Snapshot - {tag}]")
         self._print_memory_rank(f"  Role: {self.role}")
-        self._print_memory_rank(f"  GPU: {gpu_allocated:.2f} GB allocated (Δ{gpu_delta:+.2f}), {gpu_reserved:.2f} GB reserved, max: {gpu_max_allocated:.2f} GB")
         self._print_memory_rank(f"  CPU: {cpu_percent:.1f}% ({cpu_used_gb:.2f} GB used, Δ{cpu_delta:+.2f})")
+        self._print_memory_rank(f"  Tracemalloc: {current / (1024**2):.2f} MB current, {peak / (1024**2):.2f} MB peak")
         
         # Print top Python memory allocations from tracemalloc
         if len(self.memory_snapshots) > 1:
@@ -189,15 +180,9 @@ class FSDPWorker(Worker):
                         frame = stat.traceback[-1]
                         self._print_memory_rank(f"      {frame.filename}:{frame.lineno}")
         
-        # Always print tensor info if GPU memory increased significantly
-        if abs(gpu_delta) > 0.1:  # More than 100MB change
-            self._print_memory_rank(f"\n  GPU Tensor Analysis:")
-            self._print_top_tensors()
-        
-        # Print largest objects by type
-        if self.update_count % 5 == 0 or abs(cpu_delta) > 0.5:
-            self._print_memory_rank(f"\n  Largest objects in memory:")
-            self._print_largest_objects()
+        # Print top 10 memory users by class
+        self._print_memory_rank(f"\n  Top 10 memory users by class:")
+        self._print_top_memory_by_class()
         
         # Synchronize across all ranks to ensure consistent logging
         if dist.is_initialized():
@@ -211,26 +196,20 @@ class FSDPWorker(Worker):
         # Check if memory is consistently increasing
         recent_snapshots = self.memory_snapshots[-5:]
         cpu_trend = [s['cpu_used_gb'] for s in recent_snapshots]
-        gpu_trend = [s['gpu_allocated_gb'] for s in recent_snapshots]
         
         cpu_increasing = all(cpu_trend[i] <= cpu_trend[i+1] for i in range(len(cpu_trend)-1))
-        gpu_increasing = all(gpu_trend[i] <= gpu_trend[i+1] for i in range(len(gpu_trend)-1))
         
         # Calculate total increase
         cpu_increase = cpu_trend[-1] - cpu_trend[0]
-        gpu_increase = gpu_trend[-1] - gpu_trend[0]
         
-        if (cpu_increasing and cpu_increase > 0.5) or (gpu_increasing and gpu_increase > 0.1):
+        if cpu_increasing and cpu_increase > 0.5:
             self._print_memory_rank(f"\n[WARNING] Potential memory leak detected on rank {self.rank}!")
-            if cpu_increasing:
-                self._print_memory_rank(f"  CPU memory increasing: {' -> '.join(f'{x:.2f}GB' for x in cpu_trend)}")
-                self._print_memory_rank(f"  Total increase: {cpu_increase:.2f} GB")
-            if gpu_increasing:
-                self._print_memory_rank(f"  GPU memory increasing: {' -> '.join(f'{x:.2f}GB' for x in gpu_trend)}")
-                self._print_memory_rank(f"  Total increase: {gpu_increase:.2f} GB")
+            self._print_memory_rank(f"  CPU memory increasing: {' -> '.join(f'{x:.2f}GB' for x in cpu_trend)}")
+            self._print_memory_rank(f"  Total increase: {cpu_increase:.2f} GB")
             
-            # Print tensor information
-            self._print_tensor_info()
+            # Print top memory users by class
+            self._print_memory_rank(f"\n  Memory usage by class:")
+            self._print_top_memory_by_class()
             
             # Force garbage collection
             self._print_memory_rank("  Running garbage collection...")
@@ -241,90 +220,63 @@ class FSDPWorker(Worker):
             # Take another snapshot after GC
             self._take_memory_snapshot("after_gc")
     
-    def _print_tensor_info(self):
-        """Print information about tensors in memory."""
-        try:
-            # Count tensors by size
-            tensor_counts = {}
-            total_size = 0
-            
-            for obj in gc.get_objects():
-                if torch.is_tensor(obj) and obj.is_cuda:
-                    size = obj.element_size() * obj.nelement()
-                    shape_str = str(tuple(obj.shape))
-                    key = f"{shape_str} ({obj.dtype})" 
-                    if key not in tensor_counts:
-                        tensor_counts[key] = {'count': 0, 'size': 0}
-                    tensor_counts[key]['count'] += 1
-                    tensor_counts[key]['size'] += size
-                    total_size += size
-            
-            if tensor_counts:
-                self._print_memory_rank(f"  Active GPU tensors (total: {total_size / (1024**3):.2f} GB):")
-                # Sort by total size
-                sorted_tensors = sorted(tensor_counts.items(), key=lambda x: x[1]['size'], reverse=True)
-                for i, (shape, info) in enumerate(sorted_tensors[:10]):
-                    size_gb = info['size'] / (1024**3)
-                    self._print_memory_rank(f"    {shape}: {info['count']} tensors, {size_gb:.3f} GB total")
-        except Exception as e:
-            self._print_memory_rank(f"  Failed to get tensor info: {e}")
-    
-    def _print_top_tensors(self):
-        """Print top tensors by total memory usage (count * size)."""
-        try:
-            tensor_groups = {}
-            
-            for obj in gc.get_objects():
-                if torch.is_tensor(obj) and obj.is_cuda:
-                    size = obj.element_size() * obj.nelement()
-                    shape = tuple(obj.shape)
-                    dtype = str(obj.dtype)
-                    key = (shape, dtype)
-                    
-                    if key not in tensor_groups:
-                        tensor_groups[key] = {'count': 0, 'total_size': 0, 'single_size': size}
-                    tensor_groups[key]['count'] += 1
-                    tensor_groups[key]['total_size'] += size
-            
-            if tensor_groups:
-                # Sort by count * size to find tensors with many instances
-                sorted_by_count = sorted(tensor_groups.items(), 
-                                       key=lambda x: x[1]['count'] * x[1]['single_size'], 
-                                       reverse=True)[:5]
-                
-                for (shape, dtype), info in sorted_by_count:
-                    total_gb = info['total_size'] / (1024**3)
-                    single_mb = info['single_size'] / (1024**2)
-                    self._print_memory_rank(f"    {shape} {dtype}: {info['count']} x {single_mb:.1f}MB = {total_gb:.3f}GB")
-        except Exception as e:
-            self._print_memory_rank(f"  Failed to get top tensors: {e}")
-    
-    def _print_largest_objects(self):
-        """Print largest objects in memory by type."""
+    def _print_top_memory_by_class(self):
+        """Print top 10 memory users by class with total size for all objects of each class."""
         try:
             import sys
             from collections import defaultdict
             
-            type_sizes = defaultdict(lambda: {'count': 0, 'size': 0})
+            # Track total size by class
+            class_sizes = defaultdict(lambda: {'count': 0, 'total_size': 0})
             
             for obj in gc.get_objects():
                 try:
+                    # Get object size
                     obj_size = sys.getsizeof(obj)
-                    obj_type = type(obj).__name__
-                    type_sizes[obj_type]['count'] += 1
-                    type_sizes[obj_type]['size'] += obj_size
+                    
+                    # Get class name with module for better identification
+                    obj_class = obj.__class__
+                    class_name = f"{obj_class.__module__}.{obj_class.__name__}" if hasattr(obj_class, '__module__') else obj_class.__name__
+                    
+                    # Special handling for tensors to include device info
+                    if torch.is_tensor(obj):
+                        device = str(obj.device)
+                        dtype = str(obj.dtype)
+                        shape = str(tuple(obj.shape))
+                        class_name = f"torch.Tensor[{device},{dtype},{shape}]"
+                        # For tensors, use actual memory size
+                        if obj.is_cuda:
+                            obj_size = obj.element_size() * obj.nelement()
+                    
+                    class_sizes[class_name]['count'] += 1
+                    class_sizes[class_name]['total_size'] += obj_size
                 except:
+                    # Skip objects we can't get size of
                     pass
             
-            # Sort by total size
-            sorted_types = sorted(type_sizes.items(), key=lambda x: x[1]['size'], reverse=True)[:10]
+            # Sort by total size and get top 10
+            sorted_classes = sorted(class_sizes.items(), key=lambda x: x[1]['total_size'], reverse=True)[:10]
             
-            for obj_type, info in sorted_types:
-                size_mb = info['size'] / (1024**2)
-                if size_mb > 1:  # Only show types using more than 1MB
-                    self._print_memory_rank(f"    {obj_type}: {info['count']} objects, {size_mb:.1f} MB")
+            # Print results
+            total_tracked = sum(info['total_size'] for _, info in class_sizes.items())
+            self._print_memory_rank(f"    Total tracked memory: {total_tracked / (1024**3):.3f} GB")
+            self._print_memory_rank(f"    Top 10 classes by total memory:")
+            
+            for i, (class_name, info) in enumerate(sorted_classes, 1):
+                size_gb = info['total_size'] / (1024**3)
+                size_mb = info['total_size'] / (1024**2)
+                
+                # Use GB for large sizes, MB for smaller
+                if size_gb >= 0.1:
+                    size_str = f"{size_gb:.3f} GB"
+                else:
+                    size_str = f"{size_mb:.1f} MB"
+                
+                percentage = (info['total_size'] / total_tracked * 100) if total_tracked > 0 else 0
+                self._print_memory_rank(f"    {i:2d}. {class_name}: {info['count']:,} objects, {size_str} ({percentage:.1f}%)")
+                
         except Exception as e:
-            self._print_memory_rank(f"  Failed to get largest objects: {e}")
+            self._print_memory_rank(f"  Failed to get memory by class: {e}")
 
     def _init_dist_mesh(self, config: Union[ActorConfig, CriticConfig], role: Literal["actor", "critic"]):
         world_size = dist.get_world_size()
@@ -462,7 +414,6 @@ class FSDPWorker(Worker):
 
         dist.barrier()
         print_model_size(model)
-        print_gpu_memory_usage("After huggingface model init")
         mixed_precision = MixedPrecision(
             param_dtype=PrecisionType.to_dtype(fsdp_config.mp_param_dtype),
             reduce_dtype=PrecisionType.to_dtype(fsdp_config.mp_reduce_dtype),
@@ -507,7 +458,6 @@ class FSDPWorker(Worker):
             use_orig_params=fsdp_config.use_orig_params,
             device_mesh=self.device_mesh,
         )
-        print_gpu_memory_usage("After FSDP module init")
 
         if role in ["actor", "critic"]:
             self.fsdp_module = fsdp_module
@@ -537,19 +487,15 @@ class FSDPWorker(Worker):
             self.lr_scheduler = get_constant_schedule_with_warmup(
                 optimizer=self.optimizer, num_warmup_steps=num_warmup_steps
             )
-            print_gpu_memory_usage("After optimizer init")
             if self._use_param_offload:
                 offload_fsdp_model(self.fsdp_module)
-                print_gpu_memory_usage(f"After offload {role} model during init")
 
             if self._use_optimizer_offload:
                 offload_fsdp_optimizer(optimizer=self.optimizer)
-                print_gpu_memory_usage(f"After offload {role} optimizer during init")
         else:
             self.ref_fsdp_module = fsdp_module
             if self._use_ref_param_offload:
                 offload_fsdp_model(self.ref_fsdp_module)
-                print_gpu_memory_usage(f"After offload {role} model during init")
 
     def _build_rollout(self) -> None:
         tp_size = self.config.rollout.tensor_parallel_size
@@ -570,7 +516,6 @@ class FSDPWorker(Worker):
             device_mesh=rollout_device_mesh,
             use_param_offload=self._use_param_offload,
         )
-        print_gpu_memory_usage("After vllm init")
 
     @register(dispatch_mode=Dispatch.ONE_TO_ALL)
     def init_model(self):
@@ -737,12 +682,6 @@ class FSDPWorker(Worker):
             metrics["perf/mfu_actor"] = (
                 estimated_flops * self.config.actor.ppo_epochs / (promised_flops * self.world_size)
             )
-            metrics["perf/max_memory_allocated_gb"] = (
-                torch.cuda.max_memory_allocated() - self.rollout_sharding_manager.freed_bytes
-            ) / (1024**3)
-            metrics["perf/max_memory_reserved_gb"] = (
-                torch.cuda.max_memory_reserved() - self.rollout_sharding_manager.freed_bytes
-            ) / (1024**3)
             metrics["perf/cpu_memory_used_gb"] = psutil.virtual_memory().used / (1024**3)
 
             self.lr_scheduler.step()
