@@ -465,3 +465,24 @@ def compute_metrics_by_data_source(
     #     result[f"fairness/parent/{k}"] = v
 
     return result
+
+
+if __name__ == "__main__":
+    # load from saved
+    outputs_dir = "../../outputs"
+    output_files = [f for f in os.listdir(outputs_dir) if f.startswith("input_data_") and f.endswith(".json")]
+    if not output_files:
+        print("No output files found in the outputs directory.")
+    else:
+        latest_file = max(output_files, key=lambda f: os.path.getmtime(os.path.join(outputs_dir, f)))
+        with open(os.path.join(outputs_dir, latest_file), "r") as f:
+            input_data = json.load(f)
+
+        predictions = input_data["predictions"]
+        ground_truths = input_data["ground_truths"]
+        data_sources = input_data["data_sources"]
+        datasets = input_data["datasets"]
+        demographics = input_data["demographics"]
+
+        metrics = compute_metrics_by_data_source(predictions, ground_truths, data_sources, datasets, demographics)
+        print(json.dumps(metrics, indent=4))
