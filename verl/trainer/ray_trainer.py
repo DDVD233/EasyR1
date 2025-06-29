@@ -430,7 +430,7 @@ class RayPPOTrainer:
             input_ids = test_batch.batch["input_ids"]
             input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
             sample_inputs.extend(input_texts)
-            ground_truths = test_batch.non_tensor_batch["answer"]
+            ground_truths = test_batch.non_tensor_batch["ground_truth"]
             data_sources = test_batch.non_tensor_batch.get("data_source", ["unknown"] * len(input_texts))
             datasets = test_batch.non_tensor_batch.get("dataset", ["unknown"] * len(input_texts))
             demographics = test_batch.non_tensor_batch.get("demo", ["unknown"] * len(input_texts))

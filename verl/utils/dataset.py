@@ -506,6 +506,40 @@ class RLHFDataset(Dataset):
         # Make bbox tensor
         example["bbox"] = torch.tensor(example["bbox"], dtype=torch.float32)
 
+        # Extract data_source and dataset
+
+        # Set vision_path to a nonempty vision path
+        # Or empty if both vision paths are empty
+        vision_path = example['images'] if len(example['images']) != 0 else example.get('videos', [])
+        ts_path = example.get('time-series', [])
+        if ts_path is None:
+            ts_path = []
+        prompt_str = example[self.prompt_key]
+
+        try:
+            if 'How long will the patient stay in the hospital?' in prompt_str:
+                example["data_source"] = "multimodal"
+                example["dataset"] = "los_prediction"
+            elif 'Will the patient survive for at least 48 hours?' in prompt_str:
+                example["data_source"] = "multimodal"
+                example["dataset"] = "48_ihm"
+            elif len(vision_path) != 0:
+                vision_path = vision_path[0]
+                example["data_source"] = vision_path.split("/")[0]
+                example["dataset"] = vision_path.split("/")[1]
+            elif ts_path and len(ts_path) != 0:
+                example["data_source"] = "ecg"
+                # dataset already set in json
+            else:
+                raise ValueError("No modality found.")
+        except:
+            example["data_source"] = "unknown"
+            example["dataset"] = "unknown"
+
+        if len(vision_path) == 0 and len(ts_path) > 0:
+            vision_path = ts_path
+        example['vision_path'] = vision_path
+
         example["input_ids"] = input_ids
         example["attention_mask"] = attention_mask
         example["position_ids"] = position_ids
