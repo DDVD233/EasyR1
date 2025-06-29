@@ -510,10 +510,13 @@ class RLHFDataset(Dataset):
 
         # Set vision_path to a nonempty vision path
         # Or empty if both vision paths are empty
-        vision_path = example['images'][0] if 'images' in example and len(example['images']) != 0 else example.get('videos', [''])[0]
-        ts_path = example.get('time-series', [''])[0]
-        if ts_path is None:
-            ts_path = []
+        is_timeseries = False
+        vision_path = example['images'][0] if 'images' in example and len(example['images']) != 0 else None
+        if vision_path is None:  # this may be video
+            vision_path = example['videos'][0] if 'videos' in example and len(example['videos']) != 0 else None
+        if vision_path is None:  # this may be time series only
+            vision_path = example['time_series'][0] if 'time_series' in example and len(example['time_series']) != 0 else None
+            is_timeseries = True
         prompt_str = example[self.prompt_key]
 
         try:
@@ -527,7 +530,7 @@ class RLHFDataset(Dataset):
                 vision_path = vision_path[0]
                 example["data_source"] = vision_path.split("/")[0]
                 example["dataset"] = vision_path.split("/")[1]
-            elif ts_path and len(ts_path) != 0:
+            elif is_timeseries:
                 example["data_source"] = "ecg"
                 # dataset already set in json
             else:
@@ -536,8 +539,6 @@ class RLHFDataset(Dataset):
             example["data_source"] = "unknown"
             example["dataset"] = "unknown"
 
-        if len(vision_path) == 0 and len(ts_path) > 0:
-            vision_path = ts_path
         example['vision_path'] = vision_path
 
         example["input_ids"] = input_ids
