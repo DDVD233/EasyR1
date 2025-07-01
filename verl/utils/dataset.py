@@ -345,7 +345,7 @@ class RLHFDataset(Dataset):
         processed_images = []  # Initialize for all cases
 
         if self.image_key in example:
-            images = example.pop(self.image_key)
+            images = example.get(self.image_key, '')
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 
@@ -372,7 +372,7 @@ class RLHFDataset(Dataset):
             # Store the original image paths/objects for vLLM rollout worker
             example["multi_modal_data"] = {"images": images} if images else {}
         elif self.video_key in example:
-            videos = example.pop(self.video_key)
+            videos = example.get(self.video_key, '')
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
@@ -505,6 +505,41 @@ class RLHFDataset(Dataset):
             
         # Make bbox tensor
         example["bbox"] = torch.tensor(example["bbox"], dtype=torch.float32)
+
+        # Extract data_source and dataset
+
+        # Set vision_path to a nonempty vision path
+        # Or empty if both vision paths are empty
+        is_timeseries = False
+        vision_path = example['images'][0] if 'images' in example and len(example['images']) != 0 else None
+        if vision_path is None:  # this may be video
+            vision_path = example['videos'][0] if 'videos' in example and len(example['videos']) != 0 else None
+        if vision_path is None:  # this may be time series only
+            vision_path = example['time_series'][0] if 'time_series' in example and len(example['time_series']) != 0 else None
+            is_timeseries = True
+        prompt_str = example[self.prompt_key]
+
+        if 'How long will the patient stay in the hospital?' in prompt_str:
+            example["data_source"] = "multimodal"
+            example["dataset"] = "los_prediction"
+        elif 'Will the patient survive for at least 48 hours?' in prompt_str:
+            example["data_source"] = "multimodal"
+            example["dataset"] = "48_ihm"
+        elif len(vision_path) != 0:
+            try:
+                example["data_source"] = vision_path.split("/")[0]
+                example["dataset"] = vision_path.split("/")[1]
+            except IndexError:
+                example["data_source"] = "unknown"
+                example["dataset"] = "unknown"
+                print(f"Failed to parse vision path: {vision_path}. The annotation is {example}. Using default values.")
+        elif is_timeseries:
+            example["data_source"] = "ecg"
+            # dataset already set in json
+        else:
+            raise ValueError("No modality found.")
+
+        example['vision_path'] = vision_path
 
         example["input_ids"] = input_ids
         example["attention_mask"] = attention_mask
