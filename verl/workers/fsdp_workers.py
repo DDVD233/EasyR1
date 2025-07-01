@@ -104,7 +104,7 @@ class FSDPWorker(Worker):
 
         if self._has_ref:  # NOTE: it seems that manual offload is slower than FSDP offload
             self._use_ref_param_offload = self.config.ref.offload.offload_params
-    
+
     def _init_dist_mesh(self, config: Union[ActorConfig, CriticConfig], role: Literal["actor", "critic"]):
         world_size = dist.get_world_size()
         # create main device mesh
@@ -503,6 +503,12 @@ class FSDPWorker(Worker):
             metrics["perf/mfu_actor"] = (
                 estimated_flops * self.config.actor.ppo_epochs / (promised_flops * self.world_size)
             )
+            metrics["perf/max_memory_allocated_gb"] = (
+                torch.cuda.max_memory_allocated() - self.rollout_sharding_manager.freed_bytes
+            ) / (1024**3)
+            metrics["perf/max_memory_reserved_gb"] = (
+                torch.cuda.max_memory_reserved() - self.rollout_sharding_manager.freed_bytes
+            ) / (1024**3)
             metrics["perf/cpu_memory_used_gb"] = psutil.virtual_memory().used / (1024**3)
 
             self.lr_scheduler.step()
@@ -574,7 +580,6 @@ class FSDPWorker(Worker):
                 tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
             )
             output = self.ulysses_sharding_manager.postprocess_data(output)
-            print("Log probs computed.")
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
