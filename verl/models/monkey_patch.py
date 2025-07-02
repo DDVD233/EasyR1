@@ -23,6 +23,7 @@ from .transformers.qwen2_vl import (
     qwen2_vl_forward_new,
     qwen2_vl_forward_old,
 )
+from typing import Optional, Any, Mapping
 
 
 def apply_ulysses_patch(model_type: str) -> None:

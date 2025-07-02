@@ -62,8 +62,8 @@ class TimeSeriesQwen2_5_VLProcessor(Qwen2_5_VLProcessor):
 
     def __call__(
         self,
-        text: Union[TextInput, PreTokenizedInput, List[TextInput], List[PreTokenizedInput]] = None,
         images: ImageInput = None,
+        text: Union[TextInput, PreTokenizedInput, List[TextInput], List[PreTokenizedInput]] = None,
         videos: VideoInput = None,
         time_series_data: Optional[Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]] = None,
         **kwargs,
