@@ -61,3 +61,120 @@ def apply_ulysses_patch(model_type: str) -> None:
             Qwen2_5_VLForConditionalGeneration.forward = qwen2_vl_forward_old
     else:
         raise NotImplementedError(f"Model architecture {model_type} is not supported yet.")
+
+
+def time_series_vllm_patch():
+    from vllm.model_executor.models.registry import ModelRegistry
+    from verl.models.transformers.vllm_qwen import TimeSeriesQwen2_5_VLForConditionalGeneration
+
+    ModelRegistry.register_model(
+        "TimeSeriesQwen2_5_VLForConditionalGeneration",
+        TimeSeriesQwen2_5_VLForConditionalGeneration
+    )
+
+    import torch
+    from vllm.multimodal.parse import MultiModalDataParser, ProcessorBatchItems, ModalityDataItems
+    from vllm.multimodal.inputs import MultiModalFieldElem, MultiModalBatchedField, MultiModalKwargsItem
+
+    # 1) Define a ProcessorBatchItems subclass for torch.Tensor time-series
+    class TimeSeriesProcessorItems(ProcessorBatchItems[torch.Tensor]):
+        def __init__(self, data: list[torch.Tensor]) -> None:
+            # data: list of (n_channels, seq_len) tensors
+            super().__init__(data, "time-series")
+
+        def get_processor_data(self):
+            return {}
+
+        # def get_passthrough_data(self):
+        #     return {"time-series": self.data}
+
+    # 2) Monkey-patch MultiModalDataParser to recognize "time-series"
+    _orig_get_subparsers = MultiModalDataParser._get_subparsers
+
+    def _get_subparsers_with_ts(self) -> dict[str, callable]:
+        subs = _orig_get_subparsers(self)
+        subs["time-series"] = lambda data: _parse_ts(self, data)
+        return subs
+
+    def _parse_ts(self, data) -> Optional[ModalityDataItems[Any, Any]]:
+        return TimeSeriesProcessorItems(data)
+
+    # apply the patch
+    MultiModalDataParser._get_subparsers = _get_subparsers_with_ts
+
+    from vllm.multimodal.processing import BaseMultiModalProcessor
+    _orig_validate = BaseMultiModalProcessor._validate_mm_kwargs
+
+    def _validate_skip_ts(self, mm_kwargs, mm_item_counts):
+        # drop time-series from the count map so it's never checked
+        filtered_counts = {
+            modality: cnt
+            for modality, cnt in mm_item_counts.items()
+            if modality != "time-series"
+        }
+        return _orig_validate(self, mm_kwargs, filtered_counts)
+
+    # Apply the patch
+    BaseMultiModalProcessor._validate_mm_kwargs = _validate_skip_ts
+
+    _orig_validate_placeholders = BaseMultiModalProcessor._validate_mm_placeholders
+
+    # 2) Define a wrapper that skips "time-series"
+    def _validate_mm_placeholders_skip_ts(
+            self,
+            mm_placeholders: Mapping[str, list],
+            mm_item_counts: Mapping[str, int],
+    ) -> None:
+        # Filter out the time-series entry so it's never checked
+        filtered_counts = {
+            modality: count
+            for modality, count in mm_item_counts.items()
+            if modality != "time-series"
+        }
+        # Delegate to the original for everything else
+        return _orig_validate_placeholders(self, mm_placeholders, filtered_counts)
+
+    # 3) Apply the monkey-patch
+    BaseMultiModalProcessor._validate_mm_placeholders = _validate_mm_placeholders_skip_ts
+
+    # from vllm.inputs import INPUT_REGISTRY
+    # from verl.models.transformers.time_series_qwen2_5_vl.processing_time_series_qwen2_5_vl import TimeSeriesQwen2_5_VLProcessor
+    # INPUT_REGISTRY.register_input_processor(TimeSeriesQwen2_5_VLProcessor)
+    from transformers import AutoTokenizer
+    _orig_apply = BaseMultiModalProcessor.apply
+
+    def _apply_with_time_series(
+            self,
+            prompt,
+            mm_data,
+            hf_processor_mm_kwargs,
+            return_mm_hashes=False,
+    ):
+        multi_inputs = _orig_apply(
+            self, prompt, mm_data, hf_processor_mm_kwargs, return_mm_hashes
+        )
+        # multi_inputs["prompt_token_ids"] = multi_inputs["prompt_token_ids"].replace(151665, 151665 * 50, 1)
+        # inject your tensor into the kwargs that get passed to get_multimodal_embeddings
+        if "time-series" in mm_data:
+            try:
+                ts = mm_data["time-series"]
+                multi_inputs["mm_kwargs"]["time-series"] = ts
+                multi_inputs["mm_placeholders"]["time-series"] = [{
+                    "offset": multi_inputs["prompt_token_ids"].index(151665),  # <|time_series_pad|>
+                    "length": 1
+                }]
+                multi_inputs["mm_kwargs"]._items_by_modality["time-series"] = [MultiModalKwargsItem({
+                    "time-series": MultiModalFieldElem(
+                        modality="time-series",
+                        key="time-series",
+                        data=ts,
+                        field=MultiModalBatchedField()
+                    )
+                })]
+            except ValueError:
+                # 151665 not in prompt_token_ids
+                pass
+
+        return multi_inputs
+
+    BaseMultiModalProcessor.apply = _apply_with_time_series
