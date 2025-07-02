@@ -515,7 +515,7 @@ class RLHFDataset(Dataset):
         if vision_path is None:  # this may be video
             vision_path = example['videos'][0] if 'videos' in example and len(example['videos']) != 0 else None
         if vision_path is None:  # this may be time series only
-            vision_path = example['time_series'][0] if 'time_series' in example and len(example['time_series']) != 0 else None
+            vision_path = example['time_series'][0] if 'time_series' in example and len(example['time_series']) != 0 else ''
             is_timeseries = True
         prompt_str = example[self.prompt_key]
 
