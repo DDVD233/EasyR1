@@ -27,7 +27,7 @@ from .ray_trainer import RayPPOTrainer, ResourcePoolManager, Role
 
 
 # please make sure main_task is not scheduled on head
-@ray.remote(num_cpus=1)
+@ray.remote(num_cpus=8)
 class Runner:
     """A runner for RL training."""
 
