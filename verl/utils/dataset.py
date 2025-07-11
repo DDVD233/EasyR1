@@ -282,7 +282,14 @@ class RLHFDataset(Dataset):
         content_list = []
         content_list.append({"type": "time-series"})  # add time series token
 
-        if self.image_key in example:
+        if self.image_key in example and len(example[self.image_key]) > 0:
+            # make sure the number of images matches the number of prompts
+            image_count = len(example[self.image_key])
+            image_token_counts = prompt_str.count("<image>")
+            if image_token_counts > image_count:
+                prompt_str = "<image>" * (image_count - image_token_counts) + prompt_str
+            elif image_token_counts < image_count:
+                prompt_str = prompt_str.replace("<image>", "", image_count - image_token_counts)
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
@@ -403,7 +410,8 @@ class RLHFDataset(Dataset):
 
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
-            model_inputs = self.processor(processed_images if len(processed_images) > 0 else None, [prompt], add_special_tokens=False, return_tensors="pt")
+            model_inputs = self.processor(processed_images if len(processed_images) > 0 else None,
+                                          [prompt], add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the original image paths/objects for vLLM rollout worker
