@@ -280,6 +280,7 @@ class RLHFDataset(Dataset):
             prompt_str = format_prompt.render(content=prompt_str)
 
         content_list = []
+        content_list.append({"type": "time-series"})  # add time series token
 
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
@@ -300,9 +301,6 @@ class RLHFDataset(Dataset):
                     content_list.append({"type": "text", "text": content})
 
             return [{"role": "user", "content": content_list}]
-        if self.time_series_key in example and example[self.time_series_key]:
-            content_list.append({"type": "time-series"})  # add time series token
-            return content_list
         else:
             return [{"role": "user", "content": prompt_str}]
 
@@ -384,7 +382,6 @@ class RLHFDataset(Dataset):
 
         if processed_time_series:
             example[self.time_series_key] = processed_time_series
-            example["multi_modal_data"][self.time_series_key] = processed_time_series
 
         if len(processed_time_series) > 0:
             time_series_size = processed_time_series[0].size()
@@ -434,7 +431,8 @@ class RLHFDataset(Dataset):
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
             model_inputs = self.processor(
-                videos=processed_videos if len(processed_videos) > 0 else None, text=[prompt], add_special_tokens=False, return_tensors="pt"
+                videos=processed_videos if len(processed_videos) > 0 else None,
+                text=[prompt], add_special_tokens=False, return_tensors="pt"
             )
             if "second_per_grid_ts" in self.processor.model_input_names:
                 model_inputs["second_per_grid_ts"] = [2.0 / video_sample_fps for video_sample_fps in video_fps_list]
@@ -449,6 +447,8 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             example["multi_modal_data"] = {}
+
+        example["multi_modal_data"][self.time_series_key] = processed_time_series
 
         if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
             # qwen2vl mrope
