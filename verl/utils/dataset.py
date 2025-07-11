@@ -417,7 +417,7 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the original image paths/objects for vLLM rollout worker
-            example["multi_modal_data"] = {"images": images} if images else {}
+            example["multi_modal_data"] = {"image": images} if images else {}
         elif self.video_key in example:
             videos = example.get(self.video_key, '')
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
