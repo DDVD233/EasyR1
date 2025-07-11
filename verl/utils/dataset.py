@@ -351,15 +351,12 @@ class RLHFDataset(Dataset):
         ts_path = example.get('time-series', [])
 
         if self.time_series_key in example and example[self.time_series_key]:
-            logger.debug(f"Worker {self.worker_id}: Processing time series for item {index}")
             for i, time_series_item in enumerate(example[self.time_series_key]):
                 try:
                     if isinstance(time_series_item, str):
-                        full_path = os.path.join(self.data_dir, time_series_item)
-                        logger.debug(f"Worker {self.worker_id}: Loading time series {i} from {full_path}")
+                        full_path = os.path.join(self.image_dir, time_series_item)
 
                         if not os.path.exists(full_path):
-                            logger.warning(f"Worker {self.worker_id}: Time series file not found: {full_path}")
                             raise FileNotFoundError(f"Time series file not found: {full_path}")
                         else:
                             # Load the time series data
@@ -371,8 +368,6 @@ class RLHFDataset(Dataset):
                     processed_time_series.append(time_series)
 
                 except Exception as e:
-                    logger.error(
-                        f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
                     logger.error(traceback.format_exc())
                     time_series = torch.zeros((8, 2500), dtype=torch.float32)
                     processed_time_series.append(time_series)
@@ -385,7 +380,6 @@ class RLHFDataset(Dataset):
 
         if len(processed_time_series) > 0:
             time_series_size = processed_time_series[0].size()
-            logger.debug(f"Worker {self.worker_id}: Processed time series size: {time_series_size}")
 
         if self.image_key in example:
             images = example.get(self.image_key, '')
