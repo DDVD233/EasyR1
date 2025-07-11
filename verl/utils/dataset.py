@@ -70,6 +70,8 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
             elif isinstance(value, torch.Tensor):
                 tensors[key].append(value)
             else:
+                if key == "time-series":
+                    continue
                 non_tensors[key].append(value)
 
     # Second pass: pad segmentation masks to max dimensions
@@ -410,8 +412,8 @@ class RLHFDataset(Dataset):
 
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
-            model_inputs = self.processor(processed_images if len(processed_images) > 0 else None,
-                                          [prompt], add_special_tokens=False, return_tensors="pt")
+            model_inputs = self.processor([prompt],processed_images if len(processed_images) > 0 else None,
+                                          add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the original image paths/objects for vLLM rollout worker
