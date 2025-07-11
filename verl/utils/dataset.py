@@ -220,6 +220,7 @@ class RLHFDataset(Dataset):
         answer_key: str = "answer",
         image_key: str = "images",
         video_key: str = "videos",
+        time_series_key: str = "time-series",
         image_dir: Optional[str] = None,
         video_fps: float = 2.0,
         max_prompt_length: int = 1024,
@@ -236,6 +237,7 @@ class RLHFDataset(Dataset):
         self.answer_key = answer_key
         self.image_key = image_key
         self.video_key = video_key
+        self.time_series_key = time_series_key
         self.image_dir = image_dir
         self.video_fps = video_fps
         self.max_prompt_length = max_prompt_length
@@ -277,9 +279,10 @@ class RLHFDataset(Dataset):
             format_prompt = Template(self.format_prompt.strip())
             prompt_str = format_prompt.render(content=prompt_str)
 
+        content_list = []
+
         if self.image_key in example:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
-            content_list = []
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
                     content_list.append({"type": "image"})
@@ -288,8 +291,7 @@ class RLHFDataset(Dataset):
                     content_list.append({"type": "text", "text": content})
 
             return [{"role": "user", "content": content_list}]
-        elif self.video_key in example:
-            content_list = []
+        if self.video_key in example:
             for i, content in enumerate(prompt_str.split("<video>")):
                 if i != 0:
                     content_list.append({"type": "video"})
@@ -298,6 +300,9 @@ class RLHFDataset(Dataset):
                     content_list.append({"type": "text", "text": content})
 
             return [{"role": "user", "content": content_list}]
+        if self.time_series_key in example and example[self.time_series_key]:
+            content_list.append({"type": "time-series"})  # add time series token
+            return content_list
         else:
             return [{"role": "user", "content": prompt_str}]
 
@@ -343,6 +348,47 @@ class RLHFDataset(Dataset):
         # Store original image dimensions for bbox resizing
         original_dimensions = []
         processed_images = []  # Initialize for all cases
+        processed_time_series = []
+
+        ts_path = example.get('time-series', [])
+
+        if self.time_series_key in example and example[self.time_series_key]:
+            logger.debug(f"Worker {self.worker_id}: Processing time series for item {index}")
+            for i, time_series_item in enumerate(example[self.time_series_key]):
+                try:
+                    if isinstance(time_series_item, str):
+                        full_path = os.path.join(self.data_dir, time_series_item)
+                        logger.debug(f"Worker {self.worker_id}: Loading time series {i} from {full_path}")
+
+                        if not os.path.exists(full_path):
+                            logger.warning(f"Worker {self.worker_id}: Time series file not found: {full_path}")
+                            raise FileNotFoundError(f"Time series file not found: {full_path}")
+                        else:
+                            # Load the time series data
+                            time_series = torch.load(full_path).to(torch.float32)
+                            # if time_series.dtype == torch.bfloat16:
+                            #     time_series = time_series.to(torch.float32)
+                    else:
+                        time_series = time_series_item
+                    processed_time_series.append(time_series)
+
+                except Exception as e:
+                    logger.error(
+                        f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    time_series = torch.zeros((8, 2500), dtype=torch.float32)
+                    processed_time_series.append(time_series)
+        else:
+            time_series = torch.zeros((8, 2500), dtype=torch.float32)
+            processed_time_series.append(time_series)
+
+        if processed_time_series:
+            example[self.time_series_key] = processed_time_series
+            example["multi_modal_data"][self.time_series_key] = processed_time_series
+
+        if len(processed_time_series) > 0:
+            time_series_size = processed_time_series[0].size()
+            logger.debug(f"Worker {self.worker_id}: Processed time series size: {time_series_size}")
 
         if self.image_key in example:
             images = example.get(self.image_key, '')
