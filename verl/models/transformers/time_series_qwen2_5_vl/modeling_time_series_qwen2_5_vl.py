@@ -1,16 +1,15 @@
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
-
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
-from transformers import Qwen2_5_VLForConditionalGeneration
-from transformers.modeling_outputs import ModelOutput
 
-from ecg_jepa import ecg_jepa
+from transformers import Qwen2_5_VLModel, Qwen2_5_VLForConditionalGeneration
+from typing import Optional, List, Tuple, Union
+from dataclasses import dataclass
+from transformers.modeling_outputs import ModelOutput
 
 from .configuration_time_series_qwen2_5_vl import TimeSeriesQwen2_5_VLConfig
 
+from ecg_jepa import ecg_jepa
 
 @dataclass
 class Qwen2_5_VLCausalLMOutputWithPast(ModelOutput):
@@ -50,31 +49,29 @@ class Qwen2_5_VLCausalLMOutputWithPast(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor]] = None
     rope_deltas: Optional[torch.LongTensor] = None
 
-
 class TimeSeriesEmbedding(nn.Module):
     def __init__(self, embed_dim, dtype):
         super().__init__()
         params = {
-            "encoder_embed_dim": 768,
-            "encoder_depth": 12,
-            "encoder_num_heads": 16,
-            "predictor_embed_dim": 384,
-            "predictor_depth": 6,
-            "predictor_num_heads": 12,
-            "c": 8,
-            "pos_type": "sincos",
-            "mask_scale": (0, 0),
-            "leads": [0, 1, 2, 3, 4, 5, 6, 7],
+            'encoder_embed_dim': 768,
+            'encoder_depth': 12,
+            'encoder_num_heads': 16,
+            'predictor_embed_dim': 384,
+            'predictor_depth': 6,
+            'predictor_num_heads': 12,
+            'c': 8,
+            'pos_type': 'sincos',
+            'mask_scale': (0, 0),
+            'leads': [0,1,2,3,4,5,6,7]
         }
         self.encoder = ecg_jepa(**params).encoder
-        self.linear = nn.Linear(params["encoder_embed_dim"], embed_dim)
+        self.linear = nn.Linear(params['encoder_embed_dim'], embed_dim)
         self.dtype = dtype
 
     def forward(self, x):
         x = self.encoder.representation(x)
         x = self.linear(x)
         return x
-
 
 class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGeneration):
     config_class = TimeSeriesQwen2_5_VLConfig
@@ -83,12 +80,12 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
         super().__init__(config)
 
         self.time_series_embedding = TimeSeriesEmbedding(config.hidden_size, dtype=config.torch_dtype)
-
+        
         for param in self.parameters():
             param.requires_grad = True
-
+        
         # Set time series token ID (can be added during initialization)
-        if not hasattr(config, "time_series_token_id"):
+        if not hasattr(config, 'time_series_token_id'):
             config.time_series_token_id = 151665  # Default token ID for time series
 
     def forward(
@@ -121,7 +118,7 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
         # If no inputs_embeds, create from input_ids
         if inputs_embeds is None:
             inputs_embeds = self.model.embed_tokens(input_ids)
-
+            
             # Handle image and video inputs (existing logic)
             if pixel_values is not None:
                 pixel_values = pixel_values.type(self.visual.dtype)
@@ -158,11 +155,11 @@ class TimeSeriesQwen2_5_VLForConditionalGeneration(Qwen2_5_VLForConditionalGener
 
                 video_embeds = video_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
                 inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
-
+            
             # Handle time series inputs (new addition)
             if time_series_data is not None:
                 time_series_embeds = self.time_series_embedding(time_series_data)
-
+                
                 mask = input_ids == self.config.time_series_token_id
                 mask_unsqueezed = mask.unsqueeze(-1)
                 mask_expanded = mask_unsqueezed.expand_as(inputs_embeds)
