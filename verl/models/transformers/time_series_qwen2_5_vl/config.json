@@ -9,7 +9,8 @@
     "AutoModelForCausalLM": "modeling_time_series_qwen2_5_vl.TimeSeriesQwen2_5_VLForConditionalGeneration",
     "AutoModelForTokenClassification": "modeling_time_series_qwen2_5_vl.TimeSeriesQwen2_5_VLForConditionalGeneration",
     "AutoModelForVision2Seq": "modeling_time_series_qwen2_5_vl.TimeSeriesQwen2_5_VLForConditionalGeneration",
-    "AutoProcessor": "processing_time_series_qwen2_5_vl.TimeSeriesQwen2_5_VLProcessor"
+    "AutoProcessor": "processing_time_series_qwen2_5_vl.TimeSeriesQwen2_5_VLProcessor",
+    "AutoImageProcessor": "processing_time_series_qwen2_5_vl.Qwen2VLImageProcessorFast"
   },
   "bos_token_id": 151643,
   "eos_token_id": 151645,
