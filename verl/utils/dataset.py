@@ -320,7 +320,7 @@ class RLHFDataset(Dataset):
 
     def _filter_overlong_prompts(self, example: Dict[str, Any]) -> bool:
         messages = self._build_messages(example)
-        if self.image_key in example:
+        if self.image_key in example and len(example[self.image_key]) > 0:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             images = example[self.image_key]
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
@@ -333,7 +333,8 @@ class RLHFDataset(Dataset):
             model_inputs = self.processor(images=processed_images, text=[prompt],
                                           add_special_tokens=False, return_tensors="pt")
             return model_inputs["input_ids"].size(-1) <= self.max_prompt_length
-        elif self.video_key in example:
+        elif self.video_key in example and len(example[self.video_key]) > 0:
+            print("---------Adding video token to prompt---------")
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             videos = example[self.video_key]
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
@@ -394,7 +395,7 @@ class RLHFDataset(Dataset):
         if processed_time_series:
             example[self.time_series_key] = processed_time_series
 
-        if self.image_key in example:
+        if self.image_key in example and len(example[self.image_key]) > 0:
             images = example.get(self.image_key, '')
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
@@ -423,7 +424,7 @@ class RLHFDataset(Dataset):
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the original image paths/objects for vLLM rollout worker
             example["multi_modal_data"] = {"images": images} if images else {}
-        elif self.video_key in example:
+        elif self.video_key in example and len(example[self.video_key]) > 0:
             videos = example.get(self.video_key, '')
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
