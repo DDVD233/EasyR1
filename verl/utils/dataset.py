@@ -306,6 +306,7 @@ class RLHFDataset(Dataset):
             return [{"role": "user", "content": content_list}]
         elif self.video_key in example and len(example[self.video_key]) > 0:
             assert prompt_str.count("<video>") <= 1
+            print("---------Adding video token to prompt---------")
             for i, content in enumerate(prompt_str.split("<video>")):
                 if i != 0:
                     content_list.append({"type": "video"})
