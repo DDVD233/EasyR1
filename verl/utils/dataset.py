@@ -363,36 +363,34 @@ class RLHFDataset(Dataset):
 
         ts_path = example.get('time-series', [])
 
-        if self.time_series_key in example and example[self.time_series_key]:
-            for i, time_series_item in enumerate(example[self.time_series_key]):
-                try:
-                    if isinstance(time_series_item, str):
-                        full_path = os.path.join(self.image_dir, time_series_item)
+        if self.enable_time_series:
+            if self.time_series_key in example and example[self.time_series_key]:
+                for i, time_series_item in enumerate(example[self.time_series_key]):
+                    try:
+                        if isinstance(time_series_item, str):
+                            full_path = os.path.join(self.image_dir, time_series_item)
 
-                        if not os.path.exists(full_path):
-                            raise FileNotFoundError(f"Time series file not found: {full_path}")
+                            if not os.path.exists(full_path):
+                                raise FileNotFoundError(f"Time series file not found: {full_path}")
+                            else:
+                                # Load the time series data
+                                time_series = torch.load(full_path).to(torch.float32)
+                                # if time_series.dtype == torch.bfloat16:
+                                #     time_series = time_series.to(torch.float32)
                         else:
-                            # Load the time series data
-                            time_series = torch.load(full_path).to(torch.float32)
-                            # if time_series.dtype == torch.bfloat16:
-                            #     time_series = time_series.to(torch.float32)
-                    else:
-                        time_series = time_series_item
-                    processed_time_series.append(time_series)
+                            time_series = time_series_item
+                        processed_time_series.append(time_series)
 
-                except Exception as e:
-                    logger.error(traceback.format_exc())
-                    time_series = torch.zeros((8, 2500), dtype=torch.float32)
-                    processed_time_series.append(time_series)
-        else:
-            time_series = torch.zeros((8, 2500), dtype=torch.float32)
-            processed_time_series.append(time_series)
+                    except Exception as e:
+                        logger.error(traceback.format_exc())
+                        time_series = torch.zeros((8, 2500), dtype=torch.float32)
+                        processed_time_series.append(time_series)
+            else:
+                time_series = torch.zeros((8, 2500), dtype=torch.float32)
+                processed_time_series.append(time_series)
 
         if processed_time_series:
             example[self.time_series_key] = processed_time_series
-
-        if len(processed_time_series) > 0:
-            time_series_size = processed_time_series[0].size()
 
         if self.image_key in example:
             images = example.get(self.image_key, '')
@@ -457,7 +455,8 @@ class RLHFDataset(Dataset):
             attention_mask = model_inputs.pop("attention_mask")[0]
             example["multi_modal_data"] = {}
 
-        example["multi_modal_data"][self.time_series_key] = processed_time_series
+        if self.enable_time_series:
+            example["multi_modal_data"][self.time_series_key] = processed_time_series
 
         if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
             # qwen2vl mrope
