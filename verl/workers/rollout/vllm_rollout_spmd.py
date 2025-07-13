@@ -31,11 +31,11 @@ from .base import BaseRollout
 from .config import RolloutConfig
 
 
-try:
-    from ...models.monkey_patch import time_series_vllm_patch
-    time_series_vllm_patch()
-except Exception as e:
-    print(f"Failed to apply time series vllm patch. Error: {e}")
+# try:
+#     from ...models.monkey_patch import time_series_vllm_patch
+#     time_series_vllm_patch()
+# except Exception as e:
+#     print(f"Failed to apply time series vllm patch. Error: {e}")
 
 
 def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, np.ndarray]:
