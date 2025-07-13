@@ -668,12 +668,12 @@ class RayPPOTrainer:
                 # compute reward
                 if "token_level_scores" not in batch.batch:
                     with timer("reward", timing_raw):
-                        print("Start computing reward...")
                         reward_ref = self.reward_fn.compute_reward.remote(batch)
 
                 # recompute old_log_probs
                 with timer("old", timing_raw):
                     old_log_probs = self.actor_rollout_ref_wg.compute_log_probs(batch)
+                    print("LOG Probs Computed.")
                     batch = batch.union(old_log_probs)
 
                 # compute ref_log_probs
@@ -685,7 +685,9 @@ class RayPPOTrainer:
                 # compute values
                 if self.use_critic:
                     with timer("values", timing_raw):
+                        print("Start computing values...")
                         values = self.critic_wg.compute_values(batch)
+                        print("Values Computed.")
                         batch = batch.union(values)
 
                 with timer("adv", timing_raw):

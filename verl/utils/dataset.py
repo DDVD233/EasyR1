@@ -17,14 +17,6 @@ import os
 import logging
 
 logging.getLogger('qwen_vl_utils').setLevel(logging.WARNING)
-class IgnoreUnusedKwargsFilter(logging.Filter):
-    def filter(self, record):
-        # Return False to suppress the log, True to allow it
-        return not record.getMessage().startswith("Unused or unrecognized kwargs")
-
-# Apply the filter to transformers logger
-transformers_logger = logging.getLogger("transformers")
-transformers_logger.addFilter(IgnoreUnusedKwargsFilter())
 
 import traceback
 from collections import defaultdict
