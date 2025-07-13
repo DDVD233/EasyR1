@@ -67,7 +67,12 @@ def _process_multi_modal_data(
 
     if "videos" in multi_modal_data:
         for video in multi_modal_data["videos"]:
-            videos.append(process_video(video, min_pixels, max_pixels, video_fps))
+            processed_video = process_video(video, min_pixels, max_pixels, video_fps)
+
+            print("*********************")
+            print(processed_video)
+            print("*********************")
+            videos.append(processed_video)
 
     if len(images) != 0:
         return {"image": images}
@@ -196,9 +201,6 @@ class vLLMRollout(BaseRollout):
 
         # users can customize different sampling_params at different run
         with self.update_sampling_params(**prompts.meta_info):
-            print("*********************")
-            print(vllm_inputs)
-            print("*********************")
             completions: List[RequestOutput] = self.inference_engine.generate(
                 prompts=vllm_inputs, sampling_params=self.sampling_params, use_tqdm=self.use_tqdm
             )
