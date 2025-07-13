@@ -284,8 +284,8 @@ class RLHFDataset(Dataset):
             prompt_str = format_prompt.render(content=prompt_str)
 
         content_list = []
-        if self.enable_time_series:
-            content_list.append({"type": "time-series"})  # add time series token
+        # if self.enable_time_series:
+        #     content_list.append({"type": "time-series"})  # add time series token
 
         if self.image_key in example and len(example[self.image_key]) > 0:
             # make sure the number of images matches the number of prompts
