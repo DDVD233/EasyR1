@@ -63,6 +63,7 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         collate_fn=collate_fn,
         pin_memory=False,
         drop_last=True,
+        enable_time_series=config.enable_time_series,
     )
 
     val_dataset = RLHFDataset(
@@ -79,6 +80,7 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         min_pixels=config.min_pixels,
         max_pixels=config.max_pixels,
         filter_overlong_prompts=config.filter_overlong_prompts,
+        enable_time_series=config.enable_time_series,
     )
 
     if config.val_batch_size == -1:

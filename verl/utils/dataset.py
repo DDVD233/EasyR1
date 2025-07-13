@@ -232,6 +232,7 @@ class RLHFDataset(Dataset):
         max_pixels: Optional[int] = None,
         filter_overlong_prompts: bool = True,
         filter_overlong_prompts_workers: int = 16,
+        enable_time_series: bool = False,
     ):
         self.tokenizer = tokenizer
         self.processor = processor
@@ -246,6 +247,7 @@ class RLHFDataset(Dataset):
         self.truncation = truncation
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
+        self.enable_time_series = enable_time_series
 
         if "@" in data_path:
             data_path, data_split = data_path.split("@")
@@ -414,7 +416,8 @@ class RLHFDataset(Dataset):
 
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
 
-            model_inputs = self.processor([prompt], processed_images if len(processed_images) > 0 else None,
+            model_inputs = self.processor(text=[prompt],
+                                          images=processed_images if len(processed_images) > 0 else None,
                                           add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]

@@ -19,6 +19,7 @@ data:
   min_pixels: 65536
   max_pixels: 1048576
   filter_overlong_prompts: false
+  enable_time_series: false
 
 algorithm:
   adv_estimator: grpo
