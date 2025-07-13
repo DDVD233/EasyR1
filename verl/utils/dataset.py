@@ -306,7 +306,6 @@ class RLHFDataset(Dataset):
             return [{"role": "user", "content": content_list}]
         elif self.video_key in example and len(example[self.video_key]) > 0:
             assert prompt_str.count("<video>") <= 1
-            print("---------Adding video token to prompt---------")
             for i, content in enumerate(prompt_str.split("<video>")):
                 if i != 0:
                     content_list.append({"type": "video"})
@@ -334,7 +333,6 @@ class RLHFDataset(Dataset):
                                           add_special_tokens=False, return_tensors="pt")
             return model_inputs["input_ids"].size(-1) <= self.max_prompt_length
         elif self.video_key in example and len(example[self.video_key]) > 0:
-            print("---------Adding video token to prompt---------")
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             videos = example[self.video_key]
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
@@ -426,7 +424,6 @@ class RLHFDataset(Dataset):
             example["multi_modal_data"] = {"images": images} if images else {}
         elif self.video_key in example and len(example[self.video_key]) > 0:
             videos = example.get(self.video_key, '')
-            print("---------Adding video token to prompt---------" + example[self.prompt_key])
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
@@ -451,7 +448,6 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the original video paths for vLLM rollout worker
-            print(processed_videos)
             example["multi_modal_data"] = {"videos": videos} if videos else {}
         else:
             prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)

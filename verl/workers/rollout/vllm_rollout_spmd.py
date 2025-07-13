@@ -31,11 +31,11 @@ from .base import BaseRollout
 from .config import RolloutConfig
 
 
-# try:
-#     from ...models.monkey_patch import time_series_vllm_patch
-#     time_series_vllm_patch()
-# except Exception as e:
-#     print(f"Failed to apply time series vllm patch. Error: {e}")
+try:
+    from ...models.monkey_patch import time_series_vllm_patch
+    time_series_vllm_patch()
+except Exception as e:
+    print(f"Failed to apply time series vllm patch. Error: {e}")
 
 
 def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, np.ndarray]:
@@ -68,10 +68,6 @@ def _process_multi_modal_data(
     if "videos" in multi_modal_data:
         for video in multi_modal_data["videos"]:
             processed_video = process_video(video, min_pixels, max_pixels, video_fps)
-
-            print("*********************")
-            print(processed_video)
-            print("*********************")
             videos = processed_video
 
     if len(images) != 0:
