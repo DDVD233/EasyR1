@@ -113,7 +113,7 @@ def main():
                 "TOKENIZERS_PARALLELISM": "true",
                 "NCCL_DEBUG": "WARNING",
                 "VLLM_LOGGING_LEVEL": "WARNING",
-                "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
+                # "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
                 "PYTHONUNBUFFERED": "1",
             }
