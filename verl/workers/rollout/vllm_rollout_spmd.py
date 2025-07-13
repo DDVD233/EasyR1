@@ -72,7 +72,7 @@ def _process_multi_modal_data(
             print("*********************")
             print(processed_video)
             print("*********************")
-            videos.append(processed_video)
+            videos = processed_video
 
     if len(images) != 0:
         return {"image": images}
