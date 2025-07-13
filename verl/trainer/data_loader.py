@@ -41,6 +41,7 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         max_pixels=config.max_pixels,
         filter_overlong_prompts=config.filter_overlong_prompts,
         filter_overlong_prompts_workers=config.filter_overlong_prompts_workers,
+        enable_time_series=config.enable_time_series
     )
     # use sampler for better ckpt resume
     if config.shuffle:
@@ -63,7 +64,6 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         collate_fn=collate_fn,
         pin_memory=False,
         drop_last=True,
-        enable_time_series=config.enable_time_series,
     )
 
     val_dataset = RLHFDataset(
