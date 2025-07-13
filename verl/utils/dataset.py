@@ -27,6 +27,7 @@ from jinja2 import Template
 from PIL import Image
 from PIL.Image import Image as ImageObject
 import PIL
+logging.getLogger('qwen_vl_utils').setLevel(logging.WARNING)
 from qwen_vl_utils.vision_process import fetch_video
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer, ProcessorMixin
