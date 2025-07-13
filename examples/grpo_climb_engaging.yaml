@@ -7,7 +7,7 @@ data:
   video_key: videos
   image_dir: /orcd/home/002/dvdai/orcd/scratch/high_modality
   video_fps: 2.0
-  max_prompt_length: 6144
+  max_prompt_length: 8192
   max_response_length: 4096
   rollout_batch_size: 512  # equivalent to verl's data.train_batch_size
   mini_rollout_batch_size: null  # equivalent to verl's data.gen_batch_size
@@ -18,7 +18,7 @@ data:
   seed: 1
   min_pixels: 32768
   max_pixels: 262144
-  filter_overlong_prompts: false
+  filter_overlong_prompts: true
   enable_time_series: false
 
 algorithm:
