@@ -447,7 +447,8 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the original video paths for vLLM rollout worker
-            example["multi_modal_data"] = {"videos": processed_videos} if videos else {}
+            print(processed_videos)
+            example["multi_modal_data"] = {"video": processed_videos} if videos else {}
         else:
             prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             model_inputs = self.tokenizer([prompt], add_special_tokens=False, return_tensors="pt")
