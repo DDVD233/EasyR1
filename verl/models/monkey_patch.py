@@ -152,7 +152,7 @@ def time_series_vllm_patch():
             **kwargs
     ):
         multi_inputs = _orig_apply(
-            self, prompt, mm_data, hf_processor_mm_kwargs, **kwargs
+            self, prompt, mm_data, hf_processor_mm_kwargs
         )
         # multi_inputs["prompt_token_ids"] = multi_inputs["prompt_token_ids"].replace(151665, 151665 * 50, 1)
         # inject your tensor into the kwargs that get passed to get_multimodal_embeddings
