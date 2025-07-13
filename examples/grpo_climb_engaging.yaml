@@ -18,7 +18,7 @@ data:
   seed: 1
   min_pixels: 32768
   max_pixels: 262144
-  filter_overlong_prompts: true
+  filter_overlong_prompts: false
   enable_time_series: false
 
 algorithm:
