@@ -111,7 +111,7 @@ def main():
         runtime_env = {
             "env_vars": {
                 "TOKENIZERS_PARALLELISM": "true",
-                "NCCL_DEBUG": "INFO",
+                "NCCL_DEBUG": "WARNING",
                 "VLLM_LOGGING_LEVEL": "INFO",
                 "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",

@@ -326,7 +326,8 @@ class RLHFDataset(Dataset):
             for image in images:
                 processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
 
-            model_inputs = self.processor(processed_images, [prompt], add_special_tokens=False, return_tensors="pt")
+            model_inputs = self.processor(images=processed_images, text=[prompt],
+                                          add_special_tokens=False, return_tensors="pt")
             return model_inputs["input_ids"].size(-1) <= self.max_prompt_length
         elif self.video_key in example:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
