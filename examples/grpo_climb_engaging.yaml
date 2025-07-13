@@ -38,7 +38,7 @@ worker:
     micro_batch_size_per_device_for_update: 2
     micro_batch_size_per_device_for_experience: 8
     max_grad_norm: 1.0
-    padding_free: true
+    padding_free: false
     ulysses_size: 1
     model:
       model_path: Qwen/Qwen2.5-VL-7B-Instruct
