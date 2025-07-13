@@ -679,7 +679,9 @@ class RayPPOTrainer:
                 # compute ref_log_probs
                 if self.use_reference_policy:
                     with timer("ref", timing_raw):
+                        print("Start computing ref log probs...")
                         ref_log_probs = self.actor_rollout_ref_wg.compute_ref_log_probs(batch)
+                        print("Ref Log Probs Computed.")
                         batch = batch.union(ref_log_probs)
 
                 # compute values
