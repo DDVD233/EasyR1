@@ -426,7 +426,7 @@ class RLHFDataset(Dataset):
             example["multi_modal_data"] = {"images": images} if images else {}
         elif self.video_key in example and len(example[self.video_key]) > 0:
             videos = example.get(self.video_key, '')
-            print("---------Adding video token to prompt---------")
+            print("---------Adding video token to prompt---------" + example[self.prompt_key])
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
