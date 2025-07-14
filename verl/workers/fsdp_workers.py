@@ -73,6 +73,8 @@ class FSDPWorker(Worker):
         self._cache = {}
 
         if not dist.is_initialized():
+            print("Initializing distributed process group with NCCL backend.")
+            print(config)
             dist.init_process_group(backend="nccl")
 
         # improve numerical stability
