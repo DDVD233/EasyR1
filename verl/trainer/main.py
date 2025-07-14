@@ -114,14 +114,9 @@ def main():
                 "TOKENIZERS_PARALLELISM": "true",
                 "NCCL_DEBUG": "WARNING",
                 "VLLM_LOGGING_LEVEL": "WARNING",
-                # "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
+                "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
                 "PYTHONUNBUFFERED": "1",
-                # Ensure proper CUDA device visibility
-                "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "0,1"),
-                # Set NCCL timeout to help debug hangs
-                "NCCL_TIMEOUT": "1800",  # 30 minutes
-                "NCCL_IB_DISABLE": "1",  # Disable InfiniBand for local runs
             }
         }
         ray.init(runtime_env=runtime_env, dashboard_host="0.0.0.0")

@@ -75,10 +75,6 @@ class FSDPWorker(Worker):
 
         if not dist.is_initialized():
             print("Initializing distributed process group with NCCL backend.")
-            print(config)
-            # Set the device based on local rank to avoid GPU conflicts
-            local_rank = int(os.environ.get("LOCAL_RANK", 0))
-            torch.cuda.set_device(local_rank)
             dist.init_process_group(backend="nccl")
 
         # improve numerical stability
