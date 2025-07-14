@@ -55,6 +55,7 @@ class DataConfig:
     filter_overlong_prompts: bool = True
     filter_overlong_prompts_workers: int = 16
     enable_time_series: bool = False
+    limit_video_frames: int = 4
 
     def post_init(self):
         if self.image_dir is not None:

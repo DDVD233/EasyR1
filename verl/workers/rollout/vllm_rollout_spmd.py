@@ -184,12 +184,7 @@ class vLLMRollout(BaseRollout):
                 vllm_inputs.append(
                     {
                         "prompt_token_ids": list(raw_prompt_ids),
-                        "multi_modal_data": _process_multi_modal_data(
-                            multi_modal_data,
-                            prompts.meta_info["min_pixels"],
-                            prompts.meta_info["max_pixels"],
-                            prompts.meta_info["video_fps"],
-                        ),
+                        "multi_modal_data": multi_modal_data
                     }
                 )
         else:

@@ -41,7 +41,8 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         max_pixels=config.max_pixels,
         filter_overlong_prompts=config.filter_overlong_prompts,
         filter_overlong_prompts_workers=config.filter_overlong_prompts_workers,
-        enable_time_series=config.enable_time_series
+        enable_time_series=config.enable_time_series,
+        limit_video_frames=config.limit_video_frames
     )
     # use sampler for better ckpt resume
     if config.shuffle:
@@ -73,14 +74,18 @@ def create_dataloader(config: DataConfig, tokenizer: PreTrainedTokenizer, proces
         prompt_key=config.prompt_key,
         answer_key=config.answer_key,
         image_key=config.image_key,
+        video_key=config.video_key,
         image_dir=config.image_dir,
+        video_fps=config.video_fps,
         max_prompt_length=config.max_prompt_length,
         truncation="right",
         format_prompt=config.format_prompt,
         min_pixels=config.min_pixels,
         max_pixels=config.max_pixels,
         filter_overlong_prompts=config.filter_overlong_prompts,
+        filter_overlong_prompts_workers=config.filter_overlong_prompts_workers,
         enable_time_series=config.enable_time_series,
+        limit_video_frames=config.limit_video_frames
     )
 
     if config.val_batch_size == -1:

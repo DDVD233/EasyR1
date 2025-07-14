@@ -20,6 +20,7 @@ data:
   max_pixels: 65536
   filter_overlong_prompts: false
   enable_time_series: false
+  limit_video_frames: 4
 
 algorithm:
   adv_estimator: grpo
