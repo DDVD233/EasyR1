@@ -67,12 +67,17 @@ class DataParallelPPOActor(BasePPOActor):
         Returns:
             log_probs: # (bs, response_len)
         """
+        import torch.distributed as dist
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        
         input_ids = micro_batch["input_ids"]
         batch_size, seqlen = input_ids.shape
         attention_mask = micro_batch["attention_mask"]
         position_ids = micro_batch["position_ids"]
         responses = micro_batch["responses"]
         response_length = responses.size(-1)
+        print(f"[Rank {rank}] _forward_micro_batch: batch_size={batch_size}, seqlen={seqlen}, response_length={response_length}")
+        
         if position_ids.dim() == 3:  # qwen2vl mrope
             position_ids = position_ids.transpose(0, 1)  # (bsz, 3, seqlen) -> (3, bsz, seqlen)
 
@@ -144,6 +149,15 @@ class DataParallelPPOActor(BasePPOActor):
             )
             log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
         else:
+            print(f"[Rank {rank}] Calling actor_module.forward...")
+            print(f"[Rank {rank}] multi_modal_inputs keys: {list(multi_modal_inputs.keys())}")
+            
+            # Add synchronization before model forward to ensure all ranks are ready
+            if dist.is_initialized():
+                print(f"[Rank {rank}] Syncing before model forward...")
+                dist.barrier()
+                print(f"[Rank {rank}] Sync complete, proceeding with forward...")
+            
             output = self.actor_module(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -151,10 +165,13 @@ class DataParallelPPOActor(BasePPOActor):
                 **multi_modal_inputs,
                 use_cache=False,
             )
+            print(f"[Rank {rank}] Model forward complete")
+            
             logits: torch.Tensor = output.logits
             logits.div_(temperature)
             logits = logits[:, -response_length - 1 : -1, :]  # (bsz, response_length, vocab_size)
             log_probs = self.log_probs_from_logits(logits, responses)  # (bsz, response_length)
+            print(f"[Rank {rank}] Log probs computation complete")
 
         return log_probs
 
@@ -191,6 +208,9 @@ class DataParallelPPOActor(BasePPOActor):
         Returns:
             torch.Tensor: the log_prob tensor
         """
+        import torch.distributed as dist
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        
         self.actor_module.eval()
 
         temperature = data.meta_info["temperature"]
@@ -200,17 +220,29 @@ class DataParallelPPOActor(BasePPOActor):
         micro_batches = data.select(select_keys, non_tensor_select_keys).split(
             self.config.micro_batch_size_per_device_for_experience
         )
+        micro_batches_list = list(micro_batches)
+        num_micro_batches = len(micro_batches_list)
+        print(f"[Rank {rank}] Number of micro batches: {num_micro_batches}")
+        
         log_probs_lst = []
-        if self.rank == 0:
-            micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
+        # Disable tqdm for distributed training to avoid potential issues
+        # if self.rank == 0:
+        #     micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
 
-        for micro_batch in micro_batches:
+        for i, micro_batch in enumerate(micro_batches_list):
+            print(f"[Rank {rank}] Processing micro batch {i+1}/{num_micro_batches}")
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
+            
+            # Log input shapes
+            print(f"[Rank {rank}] input_ids shape: {model_inputs['input_ids'].shape}")
+            print(f"[Rank {rank}] attention_mask shape: {model_inputs['attention_mask'].shape}")
+            
             log_probs = self._forward_micro_batch(model_inputs, temperature=temperature)
+            print(f"[Rank {rank}] Micro batch {i+1} log_probs shape: {log_probs.shape}")
             log_probs_lst.append(log_probs)
 
         log_probs = torch.concat(log_probs_lst, dim=0)
-        print("Returned log_probs shape:", log_probs.shape)
+        print(f"[Rank {rank}] Final log_probs shape: {log_probs.shape}")
         return log_probs
 
     def update_policy(self, data: DataProto) -> Dict[str, Any]:

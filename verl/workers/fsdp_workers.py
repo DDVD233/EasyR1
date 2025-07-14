@@ -570,8 +570,24 @@ class FSDPWorker(Worker):
     def compute_log_probs(self, data: DataProto):
         assert self._has_actor
         print(f"[Rank {dist.get_rank()}] compute_log_probs called")
-
+        
+        # Log data shapes before processing
+        print(f"[Rank {dist.get_rank()}] Initial data batch size: {len(data.batch['input_ids'])}")
+        
         self._process_multi_modal_inputs(data)
+        
+        # Ensure all ranks have consistent data before moving to GPU
+        if dist.is_initialized():
+            # Verify batch sizes match across ranks
+            local_batch_size = torch.tensor([len(data.batch['input_ids'])], device='cuda')
+            all_batch_sizes = [torch.zeros_like(local_batch_size) for _ in range(dist.get_world_size())]
+            dist.all_gather(all_batch_sizes, local_batch_size)
+            all_batch_sizes_list = [t.item() for t in all_batch_sizes]
+            print(f"[Rank {dist.get_rank()}] Batch sizes across ranks: {all_batch_sizes_list}")
+            
+            if len(set(all_batch_sizes_list)) > 1:
+                print(f"[Rank {dist.get_rank()}] WARNING: Inconsistent batch sizes across ranks!")
+        
         data = data.to(torch.cuda.current_device())
 
         if self._use_param_offload:
