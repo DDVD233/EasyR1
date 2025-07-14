@@ -76,14 +76,12 @@ class DataParallelPPOActor(BasePPOActor):
         position_ids = micro_batch["position_ids"]
         responses = micro_batch["responses"]
         response_length = responses.size(-1)
-        print(f"[Rank {rank}] _forward_micro_batch: batch_size={batch_size}, seqlen={seqlen}, response_length={response_length}")
         
         if position_ids.dim() == 3:  # qwen2vl mrope
             position_ids = position_ids.transpose(0, 1)  # (bsz, 3, seqlen) -> (3, bsz, seqlen)
 
         multi_modal_inputs = defaultdict(list)
         if "multi_modal_inputs" in micro_batch:
-            print(f"[Rank {rank}] Processing {len(micro_batch['multi_modal_inputs'])} multi_modal_inputs")
             for idx, input_dict in enumerate(micro_batch["multi_modal_inputs"]):
                 if input_dict and isinstance(input_dict, dict):
                     for key, value in input_dict.items():
@@ -94,11 +92,6 @@ class DataParallelPPOActor(BasePPOActor):
                     multi_modal_inputs[key] = torch.cat(value, dim=0)
                 else:
                     del multi_modal_inputs[key]
-            
-            print(f"[Rank {rank}] Final multi_modal_inputs keys: {list(multi_modal_inputs.keys())}")
-
-        if hasattr(self.actor_module, '_is_root') and hasattr(self.actor_module, '_fsdp_wrapped_module'):
-            print(f"[Rank {rank}] FSDP state - is_root: {self.actor_module._is_root}, training: {self.actor_module.training}")
         
         if self.config.padding_free:
             input_ids_rmpad, indices, *_ = unpad_input(
@@ -156,9 +149,6 @@ class DataParallelPPOActor(BasePPOActor):
             )
             log_probs = full_log_probs.squeeze(-1)[:, -response_length - 1 : -1]  # (bsz, response_length)
         else:
-            print(f"[Rank {rank}] Calling actor_module.forward...")
-            print(f"[Rank {rank}] multi_modal_inputs keys: {list(multi_modal_inputs.keys())}")
-            
             output = self.actor_module(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -166,13 +156,11 @@ class DataParallelPPOActor(BasePPOActor):
                 **multi_modal_inputs,
                 use_cache=False,
             )
-            print(f"[Rank {rank}] Model forward complete")
             
             logits: torch.Tensor = output.logits
             logits.div_(temperature)
             logits = logits[:, -response_length - 1 : -1, :]  # (bsz, response_length, vocab_size)
             log_probs = self.log_probs_from_logits(logits, responses)  # (bsz, response_length)
-            print(f"[Rank {rank}] Log probs computation complete")
 
         return log_probs
 
@@ -226,16 +214,11 @@ class DataParallelPPOActor(BasePPOActor):
             micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
 
         for i, micro_batch in enumerate(micro_batches):
-            print(f"[Rank {rank}] Processing micro batch {i+1}")
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
-            print(f"[Rank {rank}] input_ids shape: {model_inputs['input_ids'].shape}")
-            print(f"[Rank {rank}] attention_mask shape: {model_inputs['attention_mask'].shape}")
             log_probs = self._forward_micro_batch(model_inputs, temperature=temperature)
-            print(f"[Rank {rank}] Micro batch {i+1} log_probs shape: {log_probs.shape}")
             log_probs_lst.append(log_probs)
 
         log_probs = torch.concat(log_probs_lst, dim=0)
-        print(f"[Rank {rank}] Final log_probs shape: {log_probs.shape}")
         return log_probs
 
     def update_policy(self, data: DataProto) -> Dict[str, Any]:
