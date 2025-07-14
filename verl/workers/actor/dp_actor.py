@@ -224,38 +224,15 @@ class DataParallelPPOActor(BasePPOActor):
         micro_batches = data.select(select_keys, non_tensor_select_keys).split(
             self.config.micro_batch_size_per_device_for_experience
         )
-        micro_batches_list = list(micro_batches)
-        num_micro_batches = len(micro_batches_list)
-        print(f"[Rank {rank}] Number of micro batches: {num_micro_batches}")
-        
         log_probs_lst = []
-        # Disable tqdm for distributed training to avoid potential issues
-        # if self.rank == 0:
-        #     micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
+        if self.rank == 0:
+            micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
 
-        for i, micro_batch in enumerate(micro_batches_list):
-            print(f"[Rank {rank}] Processing micro batch {i+1}/{num_micro_batches}")
+        for i, micro_batch in enumerate(micro_batches):
+            print(f"[Rank {rank}] Processing micro batch {i+1}")
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
-            
-            # Log input shapes
             print(f"[Rank {rank}] input_ids shape: {model_inputs['input_ids'].shape}")
             print(f"[Rank {rank}] attention_mask shape: {model_inputs['attention_mask'].shape}")
-            
-            # Check multi_modal_inputs consistency across ranks
-            if dist.is_initialized() and "multi_modal_inputs" in model_inputs:
-                mm_inputs = model_inputs["multi_modal_inputs"]
-                # Count number of samples with each type of input
-                has_images = sum(1 for inp in mm_inputs if isinstance(inp, dict) and "pixel_values" in inp)
-                has_videos = sum(1 for inp in mm_inputs if isinstance(inp, dict) and "pixel_values_videos" in inp)
-                
-                # Gather this info from all ranks
-                local_info = torch.tensor([has_images, has_videos], device='cuda')
-                all_info = [torch.zeros_like(local_info) for _ in range(dist.get_world_size())]
-                dist.all_gather(all_info, local_info)
-                
-                print(f"[Rank {rank}] Micro batch {i+1} - Images: {has_images}, Videos: {has_videos}")
-                print(f"[Rank {rank}] All ranks info: {[info.tolist() for info in all_info]}")
-            
             log_probs = self._forward_micro_batch(model_inputs, temperature=temperature)
             print(f"[Rank {rank}] Micro batch {i+1} log_probs shape: {log_probs.shape}")
             log_probs_lst.append(log_probs)
