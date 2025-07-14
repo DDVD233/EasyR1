@@ -162,12 +162,6 @@ class DataParallelPPOActor(BasePPOActor):
             print(f"[Rank {rank}] Calling actor_module.forward...")
             print(f"[Rank {rank}] multi_modal_inputs keys: {list(multi_modal_inputs.keys())}")
             
-            # Add synchronization before model forward to ensure all ranks are ready
-            if dist.is_initialized():
-                print(f"[Rank {rank}] Syncing before model forward...")
-                dist.barrier()
-                print(f"[Rank {rank}] Sync complete, proceeding with forward...")
-            
             output = self.actor_module(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
