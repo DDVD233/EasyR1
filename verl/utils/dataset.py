@@ -361,8 +361,8 @@ class RLHFDataset(Dataset):
             prompt_str = format_prompt.render(content=prompt_str)
 
         content_list = []
-        # if self.enable_time_series:
-        #     content_list.append({"type": "time-series"})  # add time series token
+        if self.enable_time_series:
+            content_list.append({"type": "time-series"})  # add time series token
 
         if prompt_str.count("<image>") > 0:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
@@ -499,10 +499,17 @@ class RLHFDataset(Dataset):
                     processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
 
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-
-            model_inputs = self.processor(text=[prompt],
-                                          images=processed_images if len(processed_images) > 0 else None,
-                                          add_special_tokens=False, return_tensors="pt")
+            try:
+                model_inputs = self.processor(text=[prompt],
+                                              images=processed_images if len(processed_images) > 0 else None,
+                                              add_special_tokens=False, return_tensors="pt")
+            except Exception as e:
+                print(e)
+                num_images = len(processed_images)
+                processed_images = [Image.new('RGB', (224, 224), color='black') for _ in range(num_images)]
+                model_inputs = self.processor(text=[prompt],
+                                                images=processed_images if len(processed_images) > 0 else None,
+                                                add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the processed images for vLLM rollout worker

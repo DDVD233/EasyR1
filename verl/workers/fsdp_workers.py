@@ -615,13 +615,7 @@ class FSDPWorker(Worker):
         if self._use_param_offload:
             offload_fsdp_model(self.fsdp_module)
 
-        print(f"[Rank {dist.get_rank()}] Moving output to CPU...")
         output = output.to("cpu")
-        
-        # Add synchronization barrier to ensure all ranks complete
-        print(f"[Rank {dist.get_rank()}] Waiting at barrier before returning...")
-        dist.barrier()
-        print(f"[Rank {dist.get_rank()}] Passed barrier, compute_log_probs completed")
         
         return output
 
