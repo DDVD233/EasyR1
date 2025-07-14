@@ -672,19 +672,8 @@ class RayPPOTrainer:
 
                 # recompute old_log_probs
                 with timer("old", timing_raw):
-                    print(f"[Ray Trainer] Starting compute_log_probs with batch size: {len(batch.batch['input_ids'])}")
-                    print(f"[Ray Trainer] Batch keys: {list(batch.batch.keys())}")
-                    print(f"[Ray Trainer] Worker group world size: {self.actor_rollout_ref_wg.world_size}")
-                    
                     old_log_probs = self.actor_rollout_ref_wg.compute_log_probs(batch)
-                    
-                    print(f"[Ray Trainer] compute_log_probs returned")
-                    print(f"[Ray Trainer] old_log_probs type: {type(old_log_probs)}")
-                    if hasattr(old_log_probs, 'batch') and 'old_log_probs' in old_log_probs.batch:
-                        print(f"[Ray Trainer] old_log_probs shape: {old_log_probs.batch['old_log_probs'].shape}")
-                    
                     batch = batch.union(old_log_probs)
-                    print("[Ray Trainer] LOG Probs Computed and merged.")
 
                 # compute ref_log_probs
                 if self.use_reference_policy:
@@ -695,9 +684,7 @@ class RayPPOTrainer:
                 # compute values
                 if self.use_critic:
                     with timer("values", timing_raw):
-                        print("Start computing values...")
                         values = self.critic_wg.compute_values(batch)
-                        print("Values Computed.")
                         batch = batch.union(values)
 
                 with timer("adv", timing_raw):
