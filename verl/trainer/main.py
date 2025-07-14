@@ -118,7 +118,7 @@ def main():
                 "PYTHONUNBUFFERED": "1",
             }
         }
-        ray.init(runtime_env=runtime_env)
+        ray.init(runtime_env=runtime_env, dashboard_host="0.0.0.0")
 
     runner = Runner.remote()
     ray.get(runner.run.remote(ppo_config))
