@@ -69,7 +69,7 @@ class DataParallelPPOActor(BasePPOActor):
         """
         import torch.distributed as dist
         rank = dist.get_rank() if dist.is_initialized() else 0
-        
+
         input_ids = micro_batch["input_ids"]
         batch_size, seqlen = input_ids.shape
         attention_mask = micro_batch["attention_mask"]
@@ -88,9 +88,7 @@ class DataParallelPPOActor(BasePPOActor):
                 if input_dict and isinstance(input_dict, dict):
                     for key, value in input_dict.items():
                         multi_modal_inputs[key].append(value)
-                        print(f"[Rank {rank}] Sample {idx} has key: {key}")
 
-            # Concatenate collected tensors
             for key, value in list(multi_modal_inputs.items()):
                 if len(value) > 0:
                     multi_modal_inputs[key] = torch.cat(value, dim=0)
@@ -99,7 +97,6 @@ class DataParallelPPOActor(BasePPOActor):
             
             print(f"[Rank {rank}] Final multi_modal_inputs keys: {list(multi_modal_inputs.keys())}")
 
-        # Log FSDP state if available
         if hasattr(self.actor_module, '_is_root') and hasattr(self.actor_module, '_fsdp_wrapped_module'):
             print(f"[Rank {rank}] FSDP state - is_root: {self.actor_module._is_root}, training: {self.actor_module.training}")
         
