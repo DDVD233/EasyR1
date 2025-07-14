@@ -576,10 +576,12 @@ class FSDPWorker(Worker):
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
             output = self.actor.compute_log_prob(data=data)
+            print("Log probs computed, shape:", output.shape)
             output = DataProto.from_dict(
                 tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
             )
             output = self.ulysses_sharding_manager.postprocess_data(output)
+            print("Log probs postprocessed")
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
@@ -590,6 +592,7 @@ class FSDPWorker(Worker):
             offload_fsdp_model(self.fsdp_module)
 
         output = output.to("cpu")
+        print("Log probs computed")
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
