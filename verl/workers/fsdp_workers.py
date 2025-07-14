@@ -15,6 +15,7 @@
 The main entry point to run the PPO algorithm
 """
 
+import os
 from typing import Literal, Optional, Union, cast
 
 import numpy as np
@@ -75,6 +76,9 @@ class FSDPWorker(Worker):
         if not dist.is_initialized():
             print("Initializing distributed process group with NCCL backend.")
             print(config)
+            # Set the device based on local rank to avoid GPU conflicts
+            local_rank = int(os.environ.get("LOCAL_RANK", 0))
+            torch.cuda.set_device(local_rank)
             dist.init_process_group(backend="nccl")
 
         # improve numerical stability
@@ -565,6 +569,7 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_probs(self, data: DataProto):
         assert self._has_actor
+        print(f"[Rank {dist.get_rank()}] compute_log_probs called")
 
         self._process_multi_modal_inputs(data)
         data = data.to(torch.cuda.current_device())
@@ -577,24 +582,33 @@ class FSDPWorker(Worker):
         # perform recompute log_prob
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
+            print(f"[Rank {dist.get_rank()}] Computing log_prob...")
             output = self.actor.compute_log_prob(data=data)
-            print("Log probs computed, shape:", output.shape)
+            print(f"[Rank {dist.get_rank()}] Log probs computed, shape: {output.shape}")
             output = DataProto.from_dict(
                 tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
             )
             output = self.ulysses_sharding_manager.postprocess_data(output)
-            print("Log probs postprocessed")
+            print(f"[Rank {dist.get_rank()}] Log probs postprocessed")
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
         if self.world_size > 1:
+            print(f"[Rank {dist.get_rank()}] Resharding FSDP module...")
             self.fsdp_module._handle.reshard(True)
+            print(f"[Rank {dist.get_rank()}] FSDP module resharded")
 
         if self._use_param_offload:
             offload_fsdp_model(self.fsdp_module)
 
+        print(f"[Rank {dist.get_rank()}] Moving output to CPU...")
         output = output.to("cpu")
-        print("Log probs computed")
+        
+        # Add synchronization barrier to ensure all ranks complete
+        print(f"[Rank {dist.get_rank()}] Waiting at barrier before returning...")
+        dist.barrier()
+        print(f"[Rank {dist.get_rank()}] Passed barrier, compute_log_probs completed")
+        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
