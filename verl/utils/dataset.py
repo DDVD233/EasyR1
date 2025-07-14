@@ -364,14 +364,7 @@ class RLHFDataset(Dataset):
         # if self.enable_time_series:
         #     content_list.append({"type": "time-series"})  # add time series token
 
-        if self.image_key in example and len(example[self.image_key]) > 0:
-            # make sure the number of images matches the number of prompts
-            image_count = len(example[self.image_key])
-            image_token_counts = prompt_str.count("<image>")
-            if image_token_counts > image_count:
-                prompt_str = "<image>" * (image_count - image_token_counts) + prompt_str
-            elif image_token_counts < image_count:
-                prompt_str = prompt_str.replace("<image>", "", image_count - image_token_counts)
+        if prompt_str.count("<image>") > 0:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
