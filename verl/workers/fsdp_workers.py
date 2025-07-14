@@ -625,6 +625,7 @@ class FSDPWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_values(self, data: DataProto):
+        print("Starting to Computing values")
         assert self._has_critic
 
         self._process_multi_modal_inputs(data)
