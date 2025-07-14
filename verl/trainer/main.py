@@ -27,7 +27,7 @@ from .ray_trainer import RayPPOTrainer, ResourcePoolManager, Role
 
 
 # please make sure main_task is not scheduled on head
-@ray.remote(num_cpus=8)
+@ray.remote(num_cpus=1)
 class Runner:
     """A runner for RL training."""
 
@@ -53,7 +53,7 @@ class Runner:
         ray_worker_group_cls = RayWorkerGroup
         role_worker_mapping = {
             Role.ActorRolloutRef: ray.remote(FSDPWorker),
-            Role.Critic: ray.remote(FSDPWorker),
+            # Role.Critic: ray.remote(FSDPWorker),
         }
         global_pool_id = "global_pool"
         resource_pool_spec = {
