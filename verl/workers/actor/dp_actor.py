@@ -83,16 +83,26 @@ class DataParallelPPOActor(BasePPOActor):
 
         multi_modal_inputs = defaultdict(list)
         if "multi_modal_inputs" in micro_batch:
-            for input_dict in micro_batch["multi_modal_inputs"]:
-                for key, value in input_dict.items():
-                    multi_modal_inputs[key].append(value)
+            print(f"[Rank {rank}] Processing {len(micro_batch['multi_modal_inputs'])} multi_modal_inputs")
+            for idx, input_dict in enumerate(micro_batch["multi_modal_inputs"]):
+                if input_dict and isinstance(input_dict, dict):
+                    for key, value in input_dict.items():
+                        multi_modal_inputs[key].append(value)
+                        print(f"[Rank {rank}] Sample {idx} has key: {key}")
 
-            for key, value in multi_modal_inputs.items():
-                if len(value) != 0:
+            # Concatenate collected tensors
+            for key, value in list(multi_modal_inputs.items()):
+                if len(value) > 0:
                     multi_modal_inputs[key] = torch.cat(value, dim=0)
                 else:
-                    multi_modal_inputs[key] = None
+                    del multi_modal_inputs[key]
+            
+            print(f"[Rank {rank}] Final multi_modal_inputs keys: {list(multi_modal_inputs.keys())}")
 
+        # Log FSDP state if available
+        if hasattr(self.actor_module, '_is_root') and hasattr(self.actor_module, '_fsdp_wrapped_module'):
+            print(f"[Rank {rank}] FSDP state - is_root: {self.actor_module._is_root}, training: {self.actor_module.training}")
+        
         if self.config.padding_free:
             input_ids_rmpad, indices, *_ = unpad_input(
                 input_ids.unsqueeze(-1), attention_mask
@@ -236,6 +246,21 @@ class DataParallelPPOActor(BasePPOActor):
             # Log input shapes
             print(f"[Rank {rank}] input_ids shape: {model_inputs['input_ids'].shape}")
             print(f"[Rank {rank}] attention_mask shape: {model_inputs['attention_mask'].shape}")
+            
+            # Check multi_modal_inputs consistency across ranks
+            if dist.is_initialized() and "multi_modal_inputs" in model_inputs:
+                mm_inputs = model_inputs["multi_modal_inputs"]
+                # Count number of samples with each type of input
+                has_images = sum(1 for inp in mm_inputs if isinstance(inp, dict) and "pixel_values" in inp)
+                has_videos = sum(1 for inp in mm_inputs if isinstance(inp, dict) and "pixel_values_videos" in inp)
+                
+                # Gather this info from all ranks
+                local_info = torch.tensor([has_images, has_videos], device='cuda')
+                all_info = [torch.zeros_like(local_info) for _ in range(dist.get_world_size())]
+                dist.all_gather(all_info, local_info)
+                
+                print(f"[Rank {rank}] Micro batch {i+1} - Images: {has_images}, Videos: {has_videos}")
+                print(f"[Rank {rank}] All ranks info: {[info.tolist() for info in all_info]}")
             
             log_probs = self._forward_micro_batch(model_inputs, temperature=temperature)
             print(f"[Rank {rank}] Micro batch {i+1} log_probs shape: {log_probs.shape}")

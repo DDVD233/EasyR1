@@ -288,6 +288,8 @@ class FSDPWorker(Worker):
             device_id=torch.cuda.current_device(),
             sync_module_states=sync_module_states,
             forward_prefetch=False,
+            backward_prefetch=None,
+            limit_all_gathers=True,
             use_orig_params=fsdp_config.use_orig_params,
             device_mesh=self.device_mesh,
         )
