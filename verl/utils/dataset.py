@@ -430,7 +430,6 @@ class RLHFDataset(Dataset):
             # Replace <video> with multiple <image> tags in the prompt
             prompt_str = example[self.prompt_key]
             example[self.prompt_key] = prompt_str.replace("<video>", "<image>" * self.limit_video_frames)
-            print(example)
         
         messages = self._build_messages(example)
         
