@@ -63,11 +63,12 @@ def _process_multi_modal_data(
     images, videos = [], []
     if "images" in multi_modal_data:
         for image in multi_modal_data["images"]:
-            images.append(image)
+            images.append(process_image(image, min_pixels, max_pixels))
 
     if "videos" in multi_modal_data:
         for video in multi_modal_data["videos"]:
-            videos.append(video)
+            processed_video = process_video(video, min_pixels, max_pixels, video_fps)
+            videos = processed_video
 
     if len(images) != 0:
         return {"image": images}
@@ -183,7 +184,7 @@ class vLLMRollout(BaseRollout):
                 vllm_inputs.append(
                     {
                         "prompt_token_ids": list(raw_prompt_ids),
-                        "multi_modal_data": multi_modal_data,
+                        "multi_modal_data": multi_modal_data
                     }
                 )
         else:

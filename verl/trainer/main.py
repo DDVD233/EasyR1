@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import os
 
 import ray
 from omegaconf import OmegaConf
@@ -27,7 +28,7 @@ from .ray_trainer import RayPPOTrainer, ResourcePoolManager, Role
 
 
 # please make sure main_task is not scheduled on head
-@ray.remote(num_cpus=8)
+@ray.remote(num_cpus=1)
 class Runner:
     """A runner for RL training."""
 
@@ -53,7 +54,7 @@ class Runner:
         ray_worker_group_cls = RayWorkerGroup
         role_worker_mapping = {
             Role.ActorRolloutRef: ray.remote(FSDPWorker),
-            Role.Critic: ray.remote(FSDPWorker),
+            # Role.Critic: ray.remote(FSDPWorker),
         }
         global_pool_id = "global_pool"
         resource_pool_spec = {
@@ -111,14 +112,14 @@ def main():
         runtime_env = {
             "env_vars": {
                 "TOKENIZERS_PARALLELISM": "true",
-                "NCCL_DEBUG": "INFO",
-                "VLLM_LOGGING_LEVEL": "INFO",
+                "NCCL_DEBUG": "WARNING",
+                "VLLM_LOGGING_LEVEL": "WARNING",
                 "TORCH_NCCL_AVOID_RECORD_STREAMS": "1",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
                 "PYTHONUNBUFFERED": "1",
             }
         }
-        ray.init(runtime_env=runtime_env)
+        ray.init(runtime_env=runtime_env, dashboard_host="0.0.0.0")
 
     runner = Runner.remote()
     ray.get(runner.run.remote(ppo_config))

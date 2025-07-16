@@ -15,6 +15,7 @@
 The main entry point to run the PPO algorithm
 """
 
+import os
 from typing import Literal, Optional, Union, cast
 
 import numpy as np
@@ -73,6 +74,7 @@ class FSDPWorker(Worker):
         self._cache = {}
 
         if not dist.is_initialized():
+            print("Initializing distributed process group with NCCL backend.")
             dist.init_process_group(backend="nccl")
 
         # improve numerical stability
@@ -282,6 +284,8 @@ class FSDPWorker(Worker):
             device_id=torch.cuda.current_device(),
             sync_module_states=sync_module_states,
             forward_prefetch=False,
+            backward_prefetch=None,
+            limit_all_gathers=True,
             use_orig_params=fsdp_config.use_orig_params,
             device_mesh=self.device_mesh,
         )
@@ -467,7 +471,7 @@ class FSDPWorker(Worker):
                     batch_multi_modal_inputs.append(multi_modal_inputs)
                 elif len(videos) != 0:
                     multi_modal_inputs = dict(
-                        self.processor.image_processor(images=None, videos=videos, return_tensors="pt")
+                        self.processor.video_processor(videos=videos, return_tensors="pt")
                     )
                     multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
                     batch_multi_modal_inputs.append(multi_modal_inputs)
@@ -563,8 +567,25 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_probs(self, data: DataProto):
         assert self._has_actor
-
+        print(f"[Rank {dist.get_rank()}] compute_log_probs called")
+        
+        # Log data shapes before processing
+        print(f"[Rank {dist.get_rank()}] Initial data batch size: {len(data.batch['input_ids'])}")
+        
         self._process_multi_modal_inputs(data)
+        
+        # Ensure all ranks have consistent data before moving to GPU
+        if dist.is_initialized():
+            # Verify batch sizes match across ranks
+            local_batch_size = torch.tensor([len(data.batch['input_ids'])], device='cuda')
+            all_batch_sizes = [torch.zeros_like(local_batch_size) for _ in range(dist.get_world_size())]
+            dist.all_gather(all_batch_sizes, local_batch_size)
+            all_batch_sizes_list = [t.item() for t in all_batch_sizes]
+            print(f"[Rank {dist.get_rank()}] Batch sizes across ranks: {all_batch_sizes_list}")
+            
+            if len(set(all_batch_sizes_list)) > 1:
+                print(f"[Rank {dist.get_rank()}] WARNING: Inconsistent batch sizes across ranks!")
+        
         data = data.to(torch.cuda.current_device())
 
         if self._use_param_offload:
@@ -575,21 +596,27 @@ class FSDPWorker(Worker):
         # perform recompute log_prob
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
+            print(f"[Rank {dist.get_rank()}] Computing log_prob...")
             output = self.actor.compute_log_prob(data=data)
+            print(f"[Rank {dist.get_rank()}] Log probs computed, shape: {output.shape}")
             output = DataProto.from_dict(
                 tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
             )
             output = self.ulysses_sharding_manager.postprocess_data(output)
+            print(f"[Rank {dist.get_rank()}] Log probs postprocessed")
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
         if self.world_size > 1:
+            print(f"[Rank {dist.get_rank()}] Resharding FSDP module...")
             self.fsdp_module._handle.reshard(True)
+            print(f"[Rank {dist.get_rank()}] FSDP module resharded")
 
         if self._use_param_offload:
             offload_fsdp_model(self.fsdp_module)
 
         output = output.to("cpu")
+        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -622,6 +649,7 @@ class FSDPWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_values(self, data: DataProto):
+        print("Starting to Computing values")
         assert self._has_critic
 
         self._process_multi_modal_inputs(data)

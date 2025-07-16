@@ -6,8 +6,8 @@ data:
   image_key: images
   video_key: videos
   image_dir: /orcd/home/002/dvdai/orcd/scratch/high_modality
-  video_fps: 2.0
-  max_prompt_length: 6144
+  video_fps: 1.0
+  max_prompt_length: 8192
   max_response_length: 4096
   rollout_batch_size: 512  # equivalent to verl's data.train_batch_size
   mini_rollout_batch_size: null  # equivalent to verl's data.gen_batch_size
@@ -16,9 +16,11 @@ data:
   override_chat_template: null
   shuffle: true
   seed: 1
-  min_pixels: 65536
-  max_pixels: 1048576
+  min_pixels: 32768
+  max_pixels: 65536
   filter_overlong_prompts: false
+  enable_time_series: false
+  limit_video_frames: 4
 
 algorithm:
   adv_estimator: grpo
@@ -37,7 +39,7 @@ worker:
     micro_batch_size_per_device_for_update: 2
     micro_batch_size_per_device_for_experience: 8
     max_grad_norm: 1.0
-    padding_free: true
+    padding_free: false
     ulysses_size: 1
     model:
       model_path: Qwen/Qwen2.5-VL-7B-Instruct

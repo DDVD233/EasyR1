@@ -15,6 +15,9 @@
 import math
 import os
 import logging
+
+logging.getLogger('qwen_vl_utils').setLevel(logging.WARNING)
+
 import traceback
 from collections import defaultdict
 from io import BytesIO
@@ -30,6 +33,7 @@ import PIL
 from qwen_vl_utils.vision_process import fetch_video
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer, ProcessorMixin
+from torchcodec.decoders import VideoDecoder
 
 from ..models.transformers.qwen2_vl import get_rope_index
 from . import torch_functional as VF
@@ -178,6 +182,77 @@ def process_video(
             return [placeholder_frame]
 
 
+def sample_video_frames_uniformly(
+    video_path: str, 
+    num_frames: int, 
+    min_pixels: Optional[int], 
+    max_pixels: Optional[int]
+) -> List[ImageObject]:
+    """
+    Sample frames uniformly from a video using torchcodec.
+    
+    Args:
+        video_path: Path to video file
+        num_frames: Number of frames to sample
+        min_pixels: Minimum pixels per frame
+        max_pixels: Maximum pixels total (will be divided by num_frames for per-frame budget)
+        
+    Returns:
+        List of PIL Images representing sampled frames
+    """
+    try:
+        # Adjust max_pixels to account for multiple frames
+        if max_pixels is not None:
+            max_pixels_per_frame = max_pixels // num_frames
+        else:
+            max_pixels_per_frame = None
+            
+        if min_pixels is not None:
+            min_pixels_per_frame = min_pixels // num_frames
+        else:
+            min_pixels_per_frame = None
+        
+        # Use torchcodec to load video and get frame count
+        decoder = VideoDecoder(video_path)
+        total_frames = decoder.metadata.num_frames
+        
+        # Sample frame indices uniformly
+        if total_frames <= num_frames:
+            # If we have fewer frames than requested, use all frames and repeat last
+            indices = list(range(total_frames))
+            while len(indices) < num_frames:
+                indices.append(total_frames - 1)
+        else:
+            # Sample uniformly
+            indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
+        
+        # Get frames at sampled indices
+        frames_tensor = decoder.get_frames_at(indices=indices).data  # (T, C, H, W)
+        
+        # Convert to PIL images and resize if needed
+        pil_frames = []
+        for i in range(frames_tensor.shape[0]):
+            frame = frames_tensor[i].permute(1, 2, 0).cpu().numpy()  # (H, W, C)
+            frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
+            pil_image = Image.fromarray(frame)
+            
+            # Process image with size constraints
+            processed_image = process_image(pil_image, min_pixels_per_frame, max_pixels_per_frame)
+            pil_frames.append(processed_image)
+            
+        return pil_frames
+        
+    except Exception as e:
+        logger.warning(f"Failed to sample video frames from {video_path}: {str(e)}. Returning black frames.")
+        # Return black frames as placeholder
+        placeholder_size = 224
+        if max_pixels is not None:
+            # Estimate a reasonable size based on max_pixels
+            size_per_frame = int(np.sqrt(max_pixels // num_frames))
+            placeholder_size = min(size_per_frame, 512)
+        return [Image.new('RGB', (placeholder_size, placeholder_size), color='black') for _ in range(num_frames)]
+
+
 def resize_bbox(bbox, original_width, original_height, new_width, new_height):
     """
     Resize bounding box coordinates based on image resizing ratio.
@@ -232,6 +307,8 @@ class RLHFDataset(Dataset):
         max_pixels: Optional[int] = None,
         filter_overlong_prompts: bool = True,
         filter_overlong_prompts_workers: int = 16,
+        enable_time_series: bool = False,
+        limit_video_frames: int = 4,
     ):
         self.tokenizer = tokenizer
         self.processor = processor
@@ -246,6 +323,8 @@ class RLHFDataset(Dataset):
         self.truncation = truncation
         self.min_pixels = min_pixels
         self.max_pixels = max_pixels
+        self.enable_time_series = enable_time_series
+        self.limit_video_frames = limit_video_frames
 
         if "@" in data_path:
             data_path, data_split = data_path.split("@")
@@ -282,16 +361,10 @@ class RLHFDataset(Dataset):
             prompt_str = format_prompt.render(content=prompt_str)
 
         content_list = []
-        content_list.append({"type": "time-series"})  # add time series token
+        if self.enable_time_series:
+            content_list.append({"type": "time-series"})  # add time series token
 
-        if self.image_key in example and len(example[self.image_key]) > 0:
-            # make sure the number of images matches the number of prompts
-            image_count = len(example[self.image_key])
-            image_token_counts = prompt_str.count("<image>")
-            if image_token_counts > image_count:
-                prompt_str = "<image>" * (image_count - image_token_counts) + prompt_str
-            elif image_token_counts < image_count:
-                prompt_str = prompt_str.replace("<image>", "", image_count - image_token_counts)
+        if prompt_str.count("<image>") > 0:
             # https://huggingface.co/docs/transformers/en/tasks/image_text_to_text
             for i, content in enumerate(prompt_str.split("<image>")):
                 if i != 0:
@@ -301,7 +374,7 @@ class RLHFDataset(Dataset):
                     content_list.append({"type": "text", "text": content})
 
             return [{"role": "user", "content": content_list}]
-        if self.video_key in example and len(example[self.video_key]) > 0:
+        elif self.video_key in example and len(example[self.video_key]) > 0:
             assert prompt_str.count("<video>") <= 1
             for i, content in enumerate(prompt_str.split("<video>")):
                 if i != 0:
@@ -316,7 +389,7 @@ class RLHFDataset(Dataset):
 
     def _filter_overlong_prompts(self, example: Dict[str, Any]) -> bool:
         messages = self._build_messages(example)
-        if self.image_key in example:
+        if self.image_key in example and len(example[self.image_key]) > 0:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             images = example[self.image_key]
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
@@ -326,21 +399,8 @@ class RLHFDataset(Dataset):
             for image in images:
                 processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
 
-            model_inputs = self.processor(processed_images, [prompt], add_special_tokens=False, return_tensors="pt")
-            return model_inputs["input_ids"].size(-1) <= self.max_prompt_length
-        elif self.video_key in example:
-            prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-            videos = example[self.video_key]
-            if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
-                videos = [os.path.join(self.image_dir, video) for video in videos]
-
-            processed_videos = [] if len(videos) != 0 else None  # text-only data
-            for video in videos:
-                processed_videos.append(process_video(video, self.min_pixels, self.max_pixels, self.video_fps))
-
-            model_inputs = self.processor(
-                videos=processed_videos, text=[prompt], add_special_tokens=False, return_tensors="pt"
-            )
+            model_inputs = self.processor(images=processed_images, text=[prompt],
+                                          add_special_tokens=False, return_tensors="pt")
             return model_inputs["input_ids"].size(-1) <= self.max_prompt_length
         else:
             input_ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True)
@@ -351,6 +411,26 @@ class RLHFDataset(Dataset):
 
     def __getitem__(self, index):
         example: dict = copy.deepcopy(self.dataset[index])
+        
+        # Track if we converted video to frames
+        video_frames = None
+        
+        # If we have videos, convert them to frames and update the prompt
+        if self.video_key in example and len(example[self.video_key]) > 0:
+            videos = example.get(self.video_key, '')
+            if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
+                videos = [os.path.join(self.image_dir, video) for video in videos]
+            
+            # Convert videos to sampled frames
+            video_frames = []
+            for video in videos:
+                frames = sample_video_frames_uniformly(video, self.limit_video_frames, self.min_pixels, self.max_pixels)
+                video_frames.extend(frames)
+            
+            # Replace <video> with multiple <image> tags in the prompt
+            prompt_str = example[self.prompt_key]
+            example[self.prompt_key] = prompt_str.replace("<video>", "<image>" * self.limit_video_frames)
+        
         messages = self._build_messages(example)
         
         # Store original image dimensions for bbox resizing
@@ -360,92 +440,80 @@ class RLHFDataset(Dataset):
 
         ts_path = example.get('time-series', [])
 
-        if self.time_series_key in example and example[self.time_series_key]:
-            for i, time_series_item in enumerate(example[self.time_series_key]):
-                try:
-                    if isinstance(time_series_item, str):
-                        full_path = os.path.join(self.image_dir, time_series_item)
+        if self.enable_time_series:
+            if self.time_series_key in example and example[self.time_series_key]:
+                for i, time_series_item in enumerate(example[self.time_series_key]):
+                    try:
+                        if isinstance(time_series_item, str):
+                            full_path = os.path.join(self.image_dir, time_series_item)
 
-                        if not os.path.exists(full_path):
-                            raise FileNotFoundError(f"Time series file not found: {full_path}")
+                            if not os.path.exists(full_path):
+                                raise FileNotFoundError(f"Time series file not found: {full_path}")
+                            else:
+                                # Load the time series data
+                                time_series = torch.load(full_path).to(torch.float32)
+                                # if time_series.dtype == torch.bfloat16:
+                                #     time_series = time_series.to(torch.float32)
                         else:
-                            # Load the time series data
-                            time_series = torch.load(full_path).to(torch.float32)
-                            # if time_series.dtype == torch.bfloat16:
-                            #     time_series = time_series.to(torch.float32)
-                    else:
-                        time_series = time_series_item
-                    processed_time_series.append(time_series)
+                            time_series = time_series_item
+                        processed_time_series.append(time_series)
 
-                except Exception as e:
-                    logger.error(traceback.format_exc())
-                    time_series = torch.zeros((8, 2500), dtype=torch.float32)
-                    processed_time_series.append(time_series)
-        else:
-            time_series = torch.zeros((8, 2500), dtype=torch.float32)
-            processed_time_series.append(time_series)
+                    except Exception as e:
+                        logger.error(traceback.format_exc())
+                        time_series = torch.zeros((8, 2500), dtype=torch.float32)
+                        processed_time_series.append(time_series)
+            else:
+                time_series = torch.zeros((8, 2500), dtype=torch.float32)
+                processed_time_series.append(time_series)
 
         if processed_time_series:
             example[self.time_series_key] = processed_time_series
 
-        if len(processed_time_series) > 0:
-            time_series_size = processed_time_series[0].size()
+        # Check if we have video frames to use as images
+        if video_frames is not None or (self.image_key in example and len(example[self.image_key]) > 0):
+            if video_frames is not None:
+                # Use video frames as images
+                processed_images = video_frames
+                for image in video_frames:
+                    original_dimensions.append((image.width, image.height))
+            elif self.image_key in example and len(example[self.image_key]) > 0:
+                images = example.get(self.image_key, '')
 
-        if self.image_key in example:
-            images = example.get(self.image_key, '')
-            if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
-                images = [os.path.join(self.image_dir, image) for image in images]
+                # These are image paths
+                if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):
+                    images = [os.path.join(self.image_dir, image) for image in images]
 
-            for image in images:
-                # Get original dimensions before processing
-                try:
-                    if isinstance(image, str):
-                        img = Image.open(image)
-                    else:
-                        img = image
-                    original_dimensions.append((img.width, img.height))
-                except Exception as e:
-                    logger.warning(f"Failed to get dimensions for image: {str(e)}. Using default dimensions.")
-                    original_dimensions.append((224, 224))
-                
-                # Process the image
-                processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
+                for image in images:
+                    # Get original dimensions before processing
+                    try:
+                        if isinstance(image, str):
+                            img = Image.open(image)
+                        else:
+                            img = image
+                        original_dimensions.append((img.width, img.height))
+                    except Exception as e:
+                        logger.warning(f"Failed to get dimensions for image: {str(e)}. Using default dimensions.")
+                        original_dimensions.append((224, 224))
+
+                    # Process the image
+                    processed_images.append(process_image(image, self.min_pixels, self.max_pixels))
 
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-
-            model_inputs = self.processor([prompt], processed_images if len(processed_images) > 0 else None,
-                                          add_special_tokens=False, return_tensors="pt")
+            try:
+                model_inputs = self.processor(text=[prompt],
+                                              images=processed_images if len(processed_images) > 0 else None,
+                                              add_special_tokens=False, return_tensors="pt")
+            except Exception as e:
+                print(e)
+                num_images = len(processed_images)
+                processed_images = [Image.new('RGB', (224, 224), color='black') for _ in range(num_images)]
+                model_inputs = self.processor(text=[prompt],
+                                                images=processed_images if len(processed_images) > 0 else None,
+                                                add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
-            # Store the original image paths/objects for vLLM rollout worker
-            example["multi_modal_data"] = {"image": processed_images} if images else {}
-        elif self.video_key in example:
-            videos = example.get(self.video_key, '')
-            if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
-                videos = [os.path.join(self.image_dir, video) for video in videos]
-
-            processed_videos = []
-            video_fps_list = []
-            for video in videos:
-                processed_video, video_fps = process_video(
-                    video, self.min_pixels, self.max_pixels, self.video_fps, return_fps=True
-                )
-                processed_videos.append(processed_video)
-                video_fps_list.append(video_fps)
-            
-            prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-
-            model_inputs = self.processor(
-                videos=processed_videos if len(processed_videos) > 0 else None,
-                text=[prompt], add_special_tokens=False, return_tensors="pt"
-            )
-            if "second_per_grid_ts" in self.processor.model_input_names:
-                model_inputs["second_per_grid_ts"] = [2.0 / video_sample_fps for video_sample_fps in video_fps_list]
-
-            input_ids = model_inputs.pop("input_ids")[0]
-            attention_mask = model_inputs.pop("attention_mask")[0]
-            # Store the original video paths for vLLM rollout worker
-            example["multi_modal_data"] = {"videos": processed_videos} if videos else {}
+            # Store the processed images for vLLM rollout worker
+            example["multi_modal_data"] = {"image": processed_images} if processed_images else {}
         else:
             prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
             model_inputs = self.tokenizer([prompt], add_special_tokens=False, return_tensors="pt")
@@ -453,7 +521,8 @@ class RLHFDataset(Dataset):
             attention_mask = model_inputs.pop("attention_mask")[0]
             example["multi_modal_data"] = {}
 
-        example["multi_modal_data"][self.time_series_key] = processed_time_series
+        if self.enable_time_series:
+            example["multi_modal_data"][self.time_series_key] = processed_time_series
 
         if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
             # qwen2vl mrope

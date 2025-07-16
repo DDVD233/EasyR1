@@ -67,27 +67,32 @@ class DataParallelPPOActor(BasePPOActor):
         Returns:
             log_probs: # (bs, response_len)
         """
+        import torch.distributed as dist
+        rank = dist.get_rank() if dist.is_initialized() else 0
+
         input_ids = micro_batch["input_ids"]
         batch_size, seqlen = input_ids.shape
         attention_mask = micro_batch["attention_mask"]
         position_ids = micro_batch["position_ids"]
         responses = micro_batch["responses"]
         response_length = responses.size(-1)
+        
         if position_ids.dim() == 3:  # qwen2vl mrope
             position_ids = position_ids.transpose(0, 1)  # (bsz, 3, seqlen) -> (3, bsz, seqlen)
 
         multi_modal_inputs = defaultdict(list)
         if "multi_modal_inputs" in micro_batch:
-            for input_dict in micro_batch["multi_modal_inputs"]:
-                for key, value in input_dict.items():
-                    multi_modal_inputs[key].append(value)
+            for idx, input_dict in enumerate(micro_batch["multi_modal_inputs"]):
+                if input_dict and isinstance(input_dict, dict):
+                    for key, value in input_dict.items():
+                        multi_modal_inputs[key].append(value)
 
-            for key, value in multi_modal_inputs.items():
-                if len(value) != 0:
+            for key, value in list(multi_modal_inputs.items()):
+                if len(value) > 0:
                     multi_modal_inputs[key] = torch.cat(value, dim=0)
                 else:
-                    multi_modal_inputs[key] = None
-
+                    del multi_modal_inputs[key]
+        
         if self.config.padding_free:
             input_ids_rmpad, indices, *_ = unpad_input(
                 input_ids.unsqueeze(-1), attention_mask
@@ -151,6 +156,7 @@ class DataParallelPPOActor(BasePPOActor):
                 **multi_modal_inputs,
                 use_cache=False,
             )
+            
             logits: torch.Tensor = output.logits
             logits.div_(temperature)
             logits = logits[:, -response_length - 1 : -1, :]  # (bsz, response_length, vocab_size)
@@ -191,6 +197,9 @@ class DataParallelPPOActor(BasePPOActor):
         Returns:
             torch.Tensor: the log_prob tensor
         """
+        import torch.distributed as dist
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        
         self.actor_module.eval()
 
         temperature = data.meta_info["temperature"]
@@ -204,13 +213,12 @@ class DataParallelPPOActor(BasePPOActor):
         if self.rank == 0:
             micro_batches = tqdm(micro_batches, desc="Compute log probs", position=1)
 
-        for micro_batch in micro_batches:
+        for i, micro_batch in enumerate(micro_batches):
             model_inputs = {**micro_batch.batch, **micro_batch.non_tensor_batch}
             log_probs = self._forward_micro_batch(model_inputs, temperature=temperature)
             log_probs_lst.append(log_probs)
 
         log_probs = torch.concat(log_probs_lst, dim=0)
-        print("Returned log_probs shape:", log_probs.shape)
         return log_probs
 
     def update_policy(self, data: DataProto) -> Dict[str, Any]:
