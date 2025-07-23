@@ -59,7 +59,7 @@ def get_fsdp_wrap_policy(model: PreTrainedModel):
     for module in model._no_split_modules:
         transformer_cls = get_module_class_from_name(model, module)
         if transformer_cls is None:
-            raise Exception(f"Cannot find {module} in pretrained model.")
+            print(f"Cannot find {module} in pretrained model.")
         else:
             transformer_cls_to_wrap.add(transformer_cls)
 

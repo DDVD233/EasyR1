@@ -41,6 +41,9 @@ def get_processor(model_path: str, **kwargs) -> Optional[ProcessorMixin]:
         if "qwen2" in model_path.lower():  # temporary patch for time_series_qwen2_5_vl
             image_processor = Qwen2VLImageProcessorFast.from_pretrained(model_path, **kwargs)
             processor = AutoProcessor.from_pretrained(model_path, image_processor=image_processor, **kwargs)
+        elif "time_series" in model_path.lower():
+            from verl.models.transformers.time_series_qwen2_5_vl.processing_time_series_qwen2_5_vl import TimeSeriesQwen2_5_VLProcessor
+            processor = TimeSeriesQwen2_5_VLProcessor.from_pretrained(model_path, **kwargs)
         else:
             processor = AutoProcessor.from_pretrained(model_path, **kwargs)
     except Exception:

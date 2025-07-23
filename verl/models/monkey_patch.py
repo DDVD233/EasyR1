@@ -152,9 +152,14 @@ def time_series_vllm_patch():
             tokenization_kwargs = None,
             return_mm_hashes: bool = False,
     ):
-        multi_inputs = _orig_apply(
-            self, prompt, mm_data, hf_processor_mm_kwargs, tokenization_kwargs, return_mm_hashes
-        )
+        try:
+            multi_inputs = _orig_apply(
+                self, prompt, mm_data, hf_processor_mm_kwargs, tokenization_kwargs, return_mm_hashes
+            )
+        except:
+            multi_inputs = _orig_apply(
+                self, prompt, mm_data, hf_processor_mm_kwargs, return_mm_hashes
+            )
         # multi_inputs["prompt_token_ids"] = multi_inputs["prompt_token_ids"].replace(151665, 151665 * 50, 1)
         # inject your tensor into the kwargs that get passed to get_multimodal_embeddings
         if "time-series" in mm_data:
