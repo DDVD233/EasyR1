@@ -16,15 +16,27 @@ Contain small python utility functions
 """
 
 import importlib.util
+import importlib.metadata
 import re
 from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any, Dict, List, Union
+from packaging import version
 
 import numpy as np
 import yaml
 from codetiming import Timer
 from yaml import Dumper
+
+def get_package_version(name: str) -> "version.Version":
+    try:
+        return version.parse(importlib.metadata.version(name))
+    except Exception:
+        return version.parse("0.0.0")
+
+@lru_cache
+def is_transformers_version_greater_than(content: str):
+    return get_package_version("transformers") >= version.parse(content)
 
 
 def is_sci_notation(number: float) -> bool:
