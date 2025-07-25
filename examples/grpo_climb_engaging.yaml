@@ -17,7 +17,7 @@ data:
   shuffle: true
   seed: 1
   min_pixels: 32768
-  max_pixels: 65536
+  max_pixels: 524288
   filter_overlong_prompts: false
   enable_time_series: false
   limit_video_frames: 4
