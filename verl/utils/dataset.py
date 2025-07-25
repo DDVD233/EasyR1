@@ -128,7 +128,7 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def process_image(
-    image: Union[Dict[str, Any], ImageObject, str], min_pixels: Optional[int], max_pixels: Optional[int]
+        image: Union[Dict[str, Any], ImageObject, str], min_pixels: Optional[int], max_pixels: Optional[int]
 ) -> ImageObject:
     try:
         if isinstance(image, str):
@@ -166,7 +166,7 @@ def process_image(
 
 
 def process_video(
-    video: str, min_pixels: Optional[int], max_pixels: Optional[int], video_fps: float, return_fps: bool = False
+        video: str, min_pixels: Optional[int], max_pixels: Optional[int], video_fps: float, return_fps: bool = False
 ) -> Union[List[ImageObject], Tuple[List[ImageObject], List[float]]]:
     try:
         vision_info = {"video": video, "min_pixels": min_pixels, "max_pixels": max_pixels, "fps": video_fps}
@@ -183,20 +183,20 @@ def process_video(
 
 
 def sample_video_frames_uniformly(
-    video_path: str, 
-    num_frames: int, 
-    min_pixels: Optional[int], 
-    max_pixels: Optional[int]
+        video_path: str,
+        num_frames: int,
+        min_pixels: Optional[int],
+        max_pixels: Optional[int]
 ) -> List[ImageObject]:
     """
     Sample frames uniformly from a video using torchcodec.
-    
+
     Args:
         video_path: Path to video file
         num_frames: Number of frames to sample
         min_pixels: Minimum pixels per frame
         max_pixels: Maximum pixels total (will be divided by num_frames for per-frame budget)
-        
+
     Returns:
         List of PIL Images representing sampled frames
     """
@@ -206,16 +206,16 @@ def sample_video_frames_uniformly(
             max_pixels_per_frame = max_pixels // num_frames
         else:
             max_pixels_per_frame = None
-            
+
         if min_pixels is not None:
             min_pixels_per_frame = min_pixels // num_frames
         else:
             min_pixels_per_frame = None
-        
+
         # Use torchcodec to load video and get frame count
         decoder = VideoDecoder(video_path)
         total_frames = decoder.metadata.num_frames
-        
+
         # Sample frame indices uniformly
         if total_frames <= num_frames:
             # If we have fewer frames than requested, use all frames and repeat last
@@ -225,23 +225,23 @@ def sample_video_frames_uniformly(
         else:
             # Sample uniformly
             indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
-        
+
         # Get frames at sampled indices
         frames_tensor = decoder.get_frames_at(indices=indices).data  # (T, C, H, W)
-        
+
         # Convert to PIL images and resize if needed
         pil_frames = []
         for i in range(frames_tensor.shape[0]):
             frame = frames_tensor[i].permute(1, 2, 0).cpu().numpy()  # (H, W, C)
             frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
             pil_image = Image.fromarray(frame)
-            
+
             # Process image with size constraints
             processed_image = process_image(pil_image, min_pixels_per_frame, max_pixels_per_frame)
             pil_frames.append(processed_image)
-            
+
         return pil_frames
-        
+
     except Exception as e:
         logger.warning(f"Failed to sample video frames from {video_path}: {str(e)}. Returning black frames.")
         # Return black frames as placeholder
@@ -289,26 +289,26 @@ class RLHFDataset(Dataset):
     """
 
     def __init__(
-        self,
-        data_path: str,
-        tokenizer: PreTrainedTokenizer,
-        processor: Optional[ProcessorMixin],
-        prompt_key: str = "prompt",
-        answer_key: str = "answer",
-        image_key: str = "images",
-        video_key: str = "videos",
-        time_series_key: str = "time-series",
-        image_dir: Optional[str] = None,
-        video_fps: float = 2.0,
-        max_prompt_length: int = 1024,
-        truncation: str = "error",
-        format_prompt: Optional[str] = None,
-        min_pixels: Optional[int] = None,
-        max_pixels: Optional[int] = None,
-        filter_overlong_prompts: bool = True,
-        filter_overlong_prompts_workers: int = 16,
-        enable_time_series: bool = False,
-        limit_video_frames: int = 4,
+            self,
+            data_path: str,
+            tokenizer: PreTrainedTokenizer,
+            processor: Optional[ProcessorMixin],
+            prompt_key: str = "prompt",
+            answer_key: str = "answer",
+            image_key: str = "images",
+            video_key: str = "videos",
+            time_series_key: str = "time-series",
+            image_dir: Optional[str] = None,
+            video_fps: float = 2.0,
+            max_prompt_length: int = 1024,
+            truncation: str = "error",
+            format_prompt: Optional[str] = None,
+            min_pixels: Optional[int] = None,
+            max_pixels: Optional[int] = None,
+            filter_overlong_prompts: bool = True,
+            filter_overlong_prompts_workers: int = 16,
+            enable_time_series: bool = False,
+            limit_video_frames: int = 4,
     ):
         self.tokenizer = tokenizer
         self.processor = processor
@@ -411,28 +411,28 @@ class RLHFDataset(Dataset):
 
     def __getitem__(self, index):
         example: dict = copy.deepcopy(self.dataset[index])
-        
+
         # Track if we converted video to frames
         video_frames = None
-        
+
         # If we have videos, convert them to frames and update the prompt
         if self.video_key in example and len(example[self.video_key]) > 0:
             videos = example.get(self.video_key, '')
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
-            
+
             # Convert videos to sampled frames
             video_frames = []
             for video in videos:
                 frames = sample_video_frames_uniformly(video, self.limit_video_frames, self.min_pixels, self.max_pixels)
                 video_frames.extend(frames)
-            
+
             # Replace <video> with multiple <image> tags in the prompt
             prompt_str = example[self.prompt_key]
             example[self.prompt_key] = prompt_str.replace("<video>", "<image>" * self.limit_video_frames)
-        
+
         messages = self._build_messages(example)
-        
+
         # Store original image dimensions for bbox resizing
         original_dimensions = []
         processed_images = []  # Initialize for all cases
@@ -502,21 +502,31 @@ class RLHFDataset(Dataset):
             try:
                 model_inputs = self.processor(text=[prompt],
                                               images=processed_images if len(processed_images) > 0 else None,
+                                              time_series_data=processed_time_series if len(
+                                                  processed_time_series) > 0 else None,
                                               add_special_tokens=False, return_tensors="pt")
             except Exception as e:
                 print(e)
                 num_images = len(processed_images)
                 processed_images = [Image.new('RGB', (224, 224), color='black') for _ in range(num_images)]
                 model_inputs = self.processor(text=[prompt],
-                                                images=processed_images if len(processed_images) > 0 else None,
-                                                add_special_tokens=False, return_tensors="pt")
+                                              images=processed_images if len(processed_images) > 0 else None,
+                                              time_series_data=processed_time_series if len(
+                                                  processed_time_series) > 0 else None,
+                                              add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             # Store the processed images for vLLM rollout worker
             example["multi_modal_data"] = {"image": processed_images} if processed_images else {}
         else:
-            prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-            model_inputs = self.tokenizer([prompt], add_special_tokens=False, return_tensors="pt")
+            # If there is time series data, use processor, otherwise use tokenizer
+            if processed_time_series:
+                prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+                model_inputs = self.processor([prompt], time_series_data=processed_time_series,
+                                              add_special_tokens=False, return_tensors="pt")
+            else:
+                prompt = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
+                model_inputs = self.tokenizer([prompt], add_special_tokens=False, return_tensors="pt")
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             example["multi_modal_data"] = {}
@@ -549,7 +559,7 @@ class RLHFDataset(Dataset):
         raw_prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
         if len(raw_prompt_ids) > self.max_prompt_length:
             if self.truncation == "left":
-                raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length :]
+                raw_prompt_ids = raw_prompt_ids[-self.max_prompt_length:]
             elif self.truncation == "right":
                 raw_prompt_ids = raw_prompt_ids[: self.max_prompt_length]
             elif self.truncation == "error":
@@ -559,7 +569,7 @@ class RLHFDataset(Dataset):
         target_size = (224, 224)
         if 'processed_images' in locals() and processed_images:
             target_size = processed_images[0].size
-            
+
         # Handle segmentation mask if available
         if "segmentation_path" in example and example["segmentation_path"]:
             try:
@@ -567,20 +577,20 @@ class RLHFDataset(Dataset):
                 if os.path.exists(seg_path):
                     logger.debug(f"Loading segmentation mask from {seg_path}")
                     segmentation_mask = Image.open(seg_path)
-                    
+
                     # Resize the segmentation mask to match the processed image dimensions
                     resized_mask = segmentation_mask.resize(
                         target_size,
                         resample=Image.Resampling.NEAREST
                     )
-                    
+
                     mask_array = np.array(resized_mask)
-                    
+
                     # If mask is grayscale, keep as 2D
                     if len(mask_array.shape) == 3 and mask_array.shape[2] == 3:
                         # If mask is RGB, convert to grayscale
                         mask_array = np.mean(mask_array, axis=2)
-                        
+
                     example["segmentation_mask"] = mask_array.astype(np.uint8)
                 else:
                     logger.warning(f"Segmentation mask not found: {seg_path}")
@@ -590,11 +600,11 @@ class RLHFDataset(Dataset):
                 example["segmentation_mask"] = None
         else:
             example["segmentation_mask"] = None
-            
+
         # Create default segmentation mask if none exists
         if example["segmentation_mask"] is None:
             example["segmentation_mask"] = np.zeros(target_size[::-1], dtype=np.uint8)  # (height, width)
-            
+
         # Handle bounding box information
         if "bbox" in example and example["bbox"] and original_dimensions:
             try:
@@ -602,7 +612,7 @@ class RLHFDataset(Dataset):
                 # We assume the bbox corresponds to the first image
                 original_width, original_height = original_dimensions[0]
                 target_width, target_height = target_size
-                
+
                 # Resize the bounding box
                 resized_bbox = resize_bbox(
                     example["bbox"],
@@ -611,7 +621,7 @@ class RLHFDataset(Dataset):
                     target_width,
                     target_height
                 )
-                
+
                 logger.debug(f"Resized bbox from {example['bbox']} to {resized_bbox}. "
                              f"Original dimensions: {original_dimensions[0]}, "
                              f"Target dimensions: {target_width}x{target_height}")
@@ -622,7 +632,7 @@ class RLHFDataset(Dataset):
         else:
             # Use empty list as placeholder if not available
             example["bbox"] = [0, 0, 0, 0]
-            
+
         # Make bbox tensor
         example["bbox"] = torch.tensor(example["bbox"], dtype=torch.float32)
 
@@ -635,7 +645,8 @@ class RLHFDataset(Dataset):
         if vision_path is None:  # this may be video
             vision_path = example['videos'][0] if 'videos' in example and len(example['videos']) != 0 else None
         if vision_path is None:  # this may be time series only
-            vision_path = example['time_series'][0] if 'time_series' in example and len(example['time_series']) != 0 else ''
+            vision_path = example['time_series'][0] if 'time_series' in example and len(
+                example['time_series']) != 0 else ''
             is_timeseries = True
         prompt_str = example[self.prompt_key]
 
@@ -666,8 +677,8 @@ class RLHFDataset(Dataset):
         example["position_ids"] = position_ids
         example["raw_prompt_ids"] = raw_prompt_ids
         example["ground_truth"] = example.pop(self.answer_key)
-        
+
         # Clean up
         example.pop("segmentation_path", None)
-        
+
         return example
