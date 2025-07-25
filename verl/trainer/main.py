@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 
 import ray
 from omegaconf import OmegaConf
@@ -54,7 +53,7 @@ class Runner:
         ray_worker_group_cls = RayWorkerGroup
         role_worker_mapping = {
             Role.ActorRolloutRef: ray.remote(FSDPWorker),
-            # Role.Critic: ray.remote(FSDPWorker),
+            Role.Critic: ray.remote(FSDPWorker),
         }
         global_pool_id = "global_pool"
         resource_pool_spec = {

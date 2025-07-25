@@ -36,8 +36,6 @@ from .config import RolloutConfig
 #     time_series_vllm_patch()
 # except Exception as e:
 #     print(f"Failed to apply time series vllm patch. Error: {e}")
-
-
 def _repeat_interleave(value: Union[torch.Tensor, np.ndarray], repeats: int) -> Union[torch.Tensor, np.ndarray]:
     # repeat the elements, supports both tensor and numpy array
     if isinstance(value, torch.Tensor):

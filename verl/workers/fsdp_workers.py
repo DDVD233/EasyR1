@@ -15,7 +15,6 @@
 The main entry point to run the PPO algorithm
 """
 
-import os
 from typing import Literal, Optional, Union, cast
 
 import numpy as np
@@ -71,10 +70,9 @@ class FSDPWorker(Worker):
         super().__init__()
         self.config = config
         self.role = role
-        self._cache = {}
+        # self._cache = {}
 
         if not dist.is_initialized():
-            print("Initializing distributed process group with NCCL backend.")
             dist.init_process_group(backend="nccl")
 
         # improve numerical stability
@@ -284,8 +282,6 @@ class FSDPWorker(Worker):
             device_id=torch.cuda.current_device(),
             sync_module_states=sync_module_states,
             forward_prefetch=False,
-            backward_prefetch=None,
-            limit_all_gathers=True,
             use_orig_params=fsdp_config.use_orig_params,
             device_mesh=self.device_mesh,
         )
@@ -441,47 +437,48 @@ class FSDPWorker(Worker):
             offload_fsdp_optimizer(self.optimizer)
 
     def _process_multi_modal_inputs(self, data: DataProto):
-        if "multi_modal_data" not in data.non_tensor_batch:
-            return
-
-        if "uid" in self._cache and not np.all(data.non_tensor_batch["uid"] == self._cache["uid"]):
-            self._cache.clear()
-
-        if "multi_modal_inputs" not in self._cache:
-            min_pixels = data.meta_info["min_pixels"]
-            max_pixels = data.meta_info["max_pixels"]
-            video_fps = data.meta_info["video_fps"]
-            batch_multi_modal_inputs = []
-            for multi_modal_data in data.non_tensor_batch["multi_modal_data"]:
-                images, videos = [], []
-                if "images" in multi_modal_data:
-                    for image in multi_modal_data["images"]:
-                        images.append(process_image(image, min_pixels, max_pixels))
-
-                if "videos" in multi_modal_data:
-                    for video in multi_modal_data["videos"]:
-                        videos.append(process_video(video, min_pixels, max_pixels, video_fps))
-
-                if len(images) != 0:
-                    # it's necessary to add `dict` to properly convert batch features to dict
-                    # otherwise the batch features will be converted to dict keys
-                    # see https://github.com/hiyouga/EasyR1/pull/339
-                    multi_modal_inputs = dict(self.processor.image_processor(images=images, return_tensors="pt"))
-                    multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
-                    batch_multi_modal_inputs.append(multi_modal_inputs)
-                elif len(videos) != 0:
-                    multi_modal_inputs = dict(
-                        self.processor.video_processor(videos=videos, return_tensors="pt")
-                    )
-                    multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
-                    batch_multi_modal_inputs.append(multi_modal_inputs)
-                else:  # text-only data
-                    batch_multi_modal_inputs.append({})
-
-            self._cache["uid"] = data.non_tensor_batch["uid"]
-            self._cache["multi_modal_inputs"] = np.array(batch_multi_modal_inputs, dtype=object)
-
-        data.non_tensor_batch["multi_modal_inputs"] = self._cache["multi_modal_inputs"]
+        return
+        # if "multi_modal_data" not in data.non_tensor_batch:
+        #     return
+        #
+        # # if "uid" in self._cache and not np.all(data.non_tensor_batch["uid"] == self._cache["uid"]):
+        # #     self._cache.clear()
+        #
+        # if "multi_modal_inputs" not in self._cache:
+        #     min_pixels = data.meta_info["min_pixels"]
+        #     max_pixels = data.meta_info["max_pixels"]
+        #     video_fps = data.meta_info["video_fps"]
+        #     batch_multi_modal_inputs = []
+        #     for multi_modal_data in data.non_tensor_batch["multi_modal_data"]:
+        #         images, videos = [], []
+        #         if "images" in multi_modal_data:
+        #             for image in multi_modal_data["images"]:
+        #                 images.append(process_image(image, min_pixels, max_pixels))
+        #
+        #         if "videos" in multi_modal_data:
+        #             for video in multi_modal_data["videos"]:
+        #                 videos.append(process_video(video, min_pixels, max_pixels, video_fps))
+        #
+        #         if len(images) != 0:
+        #             # it's necessary to add `dict` to properly convert batch features to dict
+        #             # otherwise the batch features will be converted to dict keys
+        #             # see https://github.com/hiyouga/EasyR1/pull/339
+        #             multi_modal_inputs = dict(self.processor.image_processor(images=images, return_tensors="pt"))
+        #             multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
+        #             batch_multi_modal_inputs.append(multi_modal_inputs)
+        #         elif len(videos) != 0:
+        #             multi_modal_inputs = dict(
+        #                 self.processor.video_processor(videos=videos, return_tensors="pt")
+        #             )
+        #             multi_modal_inputs = {k: v.to(torch.cuda.current_device()) for k, v in multi_modal_inputs.items()}
+        #             batch_multi_modal_inputs.append(multi_modal_inputs)
+        #         else:  # text-only data
+        #             batch_multi_modal_inputs.append({})
+        #
+        #     # self._cache["uid"] = data.non_tensor_batch["uid"]
+        #     # self._cache["multi_modal_inputs"] = np.array(batch_multi_modal_inputs, dtype=object)
+        #
+        # # data.non_tensor_batch["multi_modal_inputs"] = self._cache["multi_modal_inputs"]
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def update_actor(self, data: DataProto):
@@ -507,13 +504,6 @@ class FSDPWorker(Worker):
             metrics["perf/mfu_actor"] = (
                 estimated_flops * self.config.actor.ppo_epochs / (promised_flops * self.world_size)
             )
-            metrics["perf/max_memory_allocated_gb"] = (
-                torch.cuda.max_memory_allocated() - self.rollout_sharding_manager.freed_bytes
-            ) / (1024**3)
-            metrics["perf/max_memory_reserved_gb"] = (
-                torch.cuda.max_memory_reserved() - self.rollout_sharding_manager.freed_bytes
-            ) / (1024**3)
-            metrics["perf/cpu_memory_used_gb"] = psutil.virtual_memory().used / (1024**3)
 
             self.lr_scheduler.step()
             lr = self.lr_scheduler.get_last_lr()[0]
@@ -567,25 +557,7 @@ class FSDPWorker(Worker):
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_log_probs(self, data: DataProto):
         assert self._has_actor
-        print(f"[Rank {dist.get_rank()}] compute_log_probs called")
-        
-        # Log data shapes before processing
-        print(f"[Rank {dist.get_rank()}] Initial data batch size: {len(data.batch['input_ids'])}")
-        
         self._process_multi_modal_inputs(data)
-        
-        # Ensure all ranks have consistent data before moving to GPU
-        if dist.is_initialized():
-            # Verify batch sizes match across ranks
-            local_batch_size = torch.tensor([len(data.batch['input_ids'])], device='cuda')
-            all_batch_sizes = [torch.zeros_like(local_batch_size) for _ in range(dist.get_world_size())]
-            dist.all_gather(all_batch_sizes, local_batch_size)
-            all_batch_sizes_list = [t.item() for t in all_batch_sizes]
-            print(f"[Rank {dist.get_rank()}] Batch sizes across ranks: {all_batch_sizes_list}")
-            
-            if len(set(all_batch_sizes_list)) > 1:
-                print(f"[Rank {dist.get_rank()}] WARNING: Inconsistent batch sizes across ranks!")
-        
         data = data.to(torch.cuda.current_device())
 
         if self._use_param_offload:
@@ -596,27 +568,21 @@ class FSDPWorker(Worker):
         # perform recompute log_prob
         with self.ulysses_sharding_manager:
             data = self.ulysses_sharding_manager.preprocess_data(data)
-            print(f"[Rank {dist.get_rank()}] Computing log_prob...")
             output = self.actor.compute_log_prob(data=data)
-            print(f"[Rank {dist.get_rank()}] Log probs computed, shape: {output.shape}")
             output = DataProto.from_dict(
                 tensors={"old_log_probs": output}, meta_info={"temperature": self.config.rollout.temperature}
             )
             output = self.ulysses_sharding_manager.postprocess_data(output)
-            print(f"[Rank {dist.get_rank()}] Log probs postprocessed")
 
         # https://pytorch.org/docs/stable/notes/fsdp.html#fsdp-notes
         # unshard the root FSDP module
         if self.world_size > 1:
-            print(f"[Rank {dist.get_rank()}] Resharding FSDP module...")
             self.fsdp_module._handle.reshard(True)
-            print(f"[Rank {dist.get_rank()}] FSDP module resharded")
 
         if self._use_param_offload:
             offload_fsdp_model(self.fsdp_module)
 
         output = output.to("cpu")
-        
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
@@ -649,7 +615,6 @@ class FSDPWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_values(self, data: DataProto):
-        print("Starting to Computing values")
         assert self._has_critic
 
         self._process_multi_modal_inputs(data)
