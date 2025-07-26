@@ -512,21 +512,22 @@ def compute_metrics_by_data_source(
 
     std_acc_values = []
     std_f1_values = []
+    try:
 
-    std_acc_values.append(gender_results["std_accuracy for sex"])
-    std_f1_values.append(gender_results["std_f1 for sex"])
-
-
-    std_acc_values.append(age_results["std_accuracy"])
-    std_f1_values.append(age_results["std_f1"])
-
-    std_acc_values.append(parent_results["std_accuracy"])
-    std_f1_values.append(parent_results["std_f1"])
-
-    result["fairness/avg_std_accuracy"] = sum(std_acc_values) / len(std_acc_values)
-    result["fairness/avg_std_f1"] = sum(std_f1_values) / len(std_f1_values)
+        std_acc_values.append(gender_results["std_accuracy for sex"])
+        std_f1_values.append(gender_results["std_f1 for sex"])
 
 
+        std_acc_values.append(age_results["std_accuracy"])
+        std_f1_values.append(age_results["std_f1"])
+
+        std_acc_values.append(parent_results["std_accuracy"])
+        std_f1_values.append(parent_results["std_f1"])
+
+        result["fairness/avg_std_accuracy"] = sum(std_acc_values) / len(std_acc_values)
+        result["fairness/avg_std_f1"] = sum(std_f1_values) / len(std_f1_values)
+    except KeyError:
+        print("Some fairness metrics do not have standard deviation values, skipping average calculation.")
 
     return result
 
