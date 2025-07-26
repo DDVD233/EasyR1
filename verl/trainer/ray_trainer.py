@@ -434,7 +434,7 @@ class RayPPOTrainer:
         with open(os.path.join(generation_save_folder, "generations.jsonl"), "w") as f:
             for i in range(len(sample_inputs)):
                 try:
-                    short_answer = sample_outputs.split("boxed{")[1].split("}")[0]
+                    short_answer = sample_outputs[i].split("boxed{")[1].split("}")[0]
                 except IndexError:
                     short_answer = ''
                 answer_is_correct = short_answer == sample_scores[i]
