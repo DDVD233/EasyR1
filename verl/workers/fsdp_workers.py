@@ -32,6 +32,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForTokenClassification,
     AutoModelForVision2Seq,
+    AutoModelForImageTextToText,
     GenerationConfig,
     PreTrainedModel,
 )
@@ -230,8 +231,8 @@ class FSDPWorker(Worker):
 
         if self._is_critic:
             auto_class = AutoModelForTokenClassification
-        elif type(self.model_config) in AutoModelForVision2Seq._model_mapping.keys():
-            auto_class = AutoModelForVision2Seq
+        elif type(self.model_config) in AutoModelForImageTextToText._model_mapping.keys():
+            auto_class = AutoModelForImageTextToText
         else:
             auto_class = AutoModelForCausalLM
 
@@ -249,7 +250,7 @@ class FSDPWorker(Worker):
             with no_init_weights(), init_empty_weights():
                 model = auto_class.from_config(
                     self.model_config,
-                    torch_dtype=torch_dtype,
+                    # torch_dtype=torch_dtype,
                     attn_implementation="flash_attention_2",
                     trust_remote_code=model_config.trust_remote_code,
                 )

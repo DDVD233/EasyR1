@@ -692,17 +692,17 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         row_dict["bbox"] = torch.tensor(row_dict["bbox"], dtype=torch.float32)
 
         row_dict["multi_modal_inputs"] = dict(model_inputs)
-        if self.processor is not None:
-            # and self.processor.image_processor.__class__.__name__ == "Qwen2VLImageProcessor"
+        if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
             # qwen2vl mrope
             position_ids = get_rope_index(
                 self.processor,
                 input_ids=input_ids,
-                image_grid_thw=model_inputs.get("image_grid_thw"),
+                image_grid_thw=model_inputs.get("image_grid_thw", None),
                 attention_mask=attention_mask,
             )  # (3, seq_length)
         else:
             position_ids = torch.clip(attention_mask.cumsum(dim=0) - 1, min=0, max=None)  # (seq_length,)
+
         input_ids, attention_mask, position_ids = VF.postprocess_data(
             input_ids=input_ids,
             attention_mask=attention_mask,
