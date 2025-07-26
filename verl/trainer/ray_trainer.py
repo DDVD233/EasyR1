@@ -433,14 +433,21 @@ class RayPPOTrainer:
             os.makedirs(generation_save_folder, exist_ok=True)
         with open(os.path.join(generation_save_folder, "generations.jsonl"), "w") as f:
             for i in range(len(sample_inputs)):
+                try:
+                    short_answer = sample_outputs.split("boxed{")[1].split("}")[0]
+                except IndexError:
+                    short_answer = ''
+                answer_is_correct = short_answer == sample_scores[i]
                 f.write(
                     ujson.dumps({
                         "input": sample_inputs[i],
-                        "output": sample_outputs[i],
+                        "generations": sample_outputs[i],
+                        "short_answer": short_answer,
+                        "answer_is_correct": answer_is_correct,
                         "label": sample_labels[i],
                         "score": sample_scores[i],
                         "dataset": sample_datasets[i],
-                        "datapath": sample_datapaths[i]
+                        "datapath": sample_datapaths[i],
                     }) + "\n"
                 )
 
