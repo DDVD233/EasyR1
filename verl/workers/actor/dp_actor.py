@@ -24,7 +24,7 @@ from einops import rearrange
 from ray.experimental.tqdm_ray import tqdm
 from torch import nn
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
-from transformers.modeling_flash_attention_utils import index_first_axis, pad_input, unpad_input
+# from transformers.modeling_flash_attention_utils import index_first_axis, pad_input, unpad_input
 
 from ...protocol import DataProto
 from ...trainer import core_algos
@@ -33,6 +33,11 @@ from ...utils.py_functional import append_to_dict
 from ...utils.ulysses import gather_outputs_and_unpad, ulysses_pad_and_slice_inputs
 from .base import BasePPOActor
 from .config import ActorConfig
+
+try:
+    from flash_attn.bert_padding import index_first_axis, pad_input, rearrange, unpad_input
+except ImportError:
+    pass
 
 
 __all__ = ["DataParallelPPOActor"]
