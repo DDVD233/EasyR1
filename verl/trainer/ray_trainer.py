@@ -28,6 +28,7 @@ import numpy
 import numpy as np
 import ray
 import torch
+import ujson
 import wandb
 from codetiming import Timer
 from ray.experimental.tqdm_ray import tqdm
@@ -414,11 +415,34 @@ class RayPPOTrainer:
         metric_dict.update(**metrics)
         wandb.log(metric_dict, step=self.global_step)
 
+        # save outputs
+        self.save_generations(sample_datapaths, sample_datasets, sample_inputs, sample_labels, sample_outputs,
+                              sample_scores)
+
         self._maybe_log_val_generations(sample_inputs, sample_outputs, sample_labels, sample_scores,
                                         sample_datasets, sample_datapaths)
         reward_score = torch.cat(reward_tensor_lst, dim=0).sum(-1).mean().item()
         val_reward_metrics = {f"val/{key}_reward": value for key, value in reduce_metrics(reward_metrics_lst).items()}
         return {"val/reward_score": reward_score, **val_reward_metrics}
+
+    def save_generations(self, sample_datapaths, sample_datasets, sample_inputs, sample_labels, sample_outputs,
+                         sample_scores):
+        generation_save_folder = os.path.join(self.config.trainer.save_checkpoint_path,
+                                              f"global_step_{self.global_step}")
+        if not os.path.exists(generation_save_folder):
+            os.makedirs(generation_save_folder, exist_ok=True)
+        with open(os.path.join(generation_save_folder, "generations.jsonl"), "w") as f:
+            for i in range(len(sample_inputs)):
+                f.write(
+                    ujson.dumps({
+                        "input": sample_inputs[i],
+                        "output": sample_outputs[i],
+                        "label": sample_labels[i],
+                        "score": sample_scores[i],
+                        "dataset": sample_datasets[i],
+                        "datapath": sample_datapaths[i]
+                    }) + "\n"
+                )
 
     def init_workers(self) -> None:
         """Init resource pool and worker group"""
