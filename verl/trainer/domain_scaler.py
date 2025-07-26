@@ -1,5 +1,6 @@
 import torch
 from collections import defaultdict
+from typing import List
 
 
 class DomainScaler(torch.nn.Module):
