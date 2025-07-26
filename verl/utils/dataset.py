@@ -501,35 +501,35 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                     logger.error(f"Worker {self.worker_id}: Error processing video {i} for item {index}: {str(e)}")
                     logger.error(traceback.format_exc())
 
-        if self.time_series_key in row_dict and row_dict[self.time_series_key]:
-            logger.debug(f"Worker {self.worker_id}: Processing time series for item {index}")
-            for i, time_series_item in enumerate(row_dict[self.time_series_key]):
-                try:
-                    if isinstance(time_series_item, str):
-                        full_path = os.path.join(self.data_dir, time_series_item)
-                        logger.debug(f"Worker {self.worker_id}: Loading time series {i} from {full_path}")
-
-                        if not os.path.exists(full_path):
-                            logger.warning(f"Worker {self.worker_id}: Time series file not found: {full_path}")
-                            raise FileNotFoundError(f"Time series file not found: {full_path}")
-                        else:
-                            # Load the time series data
-                            time_series = torch.load(full_path).to(torch.float32)
-                            # if time_series.dtype == torch.bfloat16:
-                            #     time_series = time_series.to(torch.float32)
-                    else:
-                        time_series = time_series_item
-                    processed_time_series.append(time_series)
-
-                except Exception as e:
-                    logger.error(
-                        f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
-                    logger.error(traceback.format_exc())
-                    time_series = torch.zeros((8, 2500), dtype=torch.float32)
-                    processed_time_series.append(time_series)
-        else:
-            time_series = torch.zeros((8, 2500), dtype=torch.float32)
-            processed_time_series.append(time_series)
+        # if self.time_series_key in row_dict and row_dict[self.time_series_key]:
+        #     logger.debug(f"Worker {self.worker_id}: Processing time series for item {index}")
+        #     for i, time_series_item in enumerate(row_dict[self.time_series_key]):
+        #         try:
+        #             if isinstance(time_series_item, str):
+        #                 full_path = os.path.join(self.data_dir, time_series_item)
+        #                 logger.debug(f"Worker {self.worker_id}: Loading time series {i} from {full_path}")
+        #
+        #                 if not os.path.exists(full_path):
+        #                     logger.warning(f"Worker {self.worker_id}: Time series file not found: {full_path}")
+        #                     raise FileNotFoundError(f"Time series file not found: {full_path}")
+        #                 else:
+        #                     # Load the time series data
+        #                     time_series = torch.load(full_path).to(torch.float32)
+        #                     # if time_series.dtype == torch.bfloat16:
+        #                     #     time_series = time_series.to(torch.float32)
+        #             else:
+        #                 time_series = time_series_item
+        #             processed_time_series.append(time_series)
+        #
+        #         except Exception as e:
+        #             logger.error(
+        #                 f"Worker {self.worker_id}: Error processing time series {i} for item {index}: {str(e)}")
+        #             logger.error(traceback.format_exc())
+        #             time_series = torch.zeros((8, 2500), dtype=torch.float32)
+        #             processed_time_series.append(time_series)
+        # else:
+        #     time_series = torch.zeros((8, 2500), dtype=torch.float32)
+        #     processed_time_series.append(time_series)
 
         # get size from processed_images
         if len(processed_images) > 0:
@@ -538,11 +538,11 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         else:
             image_size = (224, 224)
 
-        if len(processed_time_series) > 0:
-            time_series_size = processed_time_series[0].size()
-            logger.debug(f"Worker {self.worker_id}: Processed time series size: {time_series_size}")
-        else:
-            time_series_size = (8, 2500)
+        # if len(processed_time_series) > 0:
+        #     time_series_size = processed_time_series[0].size()
+        #     logger.debug(f"Worker {self.worker_id}: Processed time series size: {time_series_size}")
+        # else:
+        #     time_series_size = (8, 2500)
 
         # Load segmentation mask if available
         if "segmentation_path" in row_dict and row_dict["segmentation_path"]:
@@ -573,9 +573,9 @@ class RLHFDataset(Dataset, ImageProcessMixin):
         row_dict["multi_modal_data"] = {
             "image": processed_images,
         }
-        if processed_time_series:
-            row_dict[self.time_series_key] = processed_time_series
-            row_dict["multi_modal_data"][self.time_series_key] = processed_time_series
+        # if processed_time_series:
+        #     row_dict[self.time_series_key] = processed_time_series
+        #     row_dict["multi_modal_data"][self.time_series_key] = processed_time_series
 
         # Replace all image tokens in prompt with placeholders
         prompt_str = prompt_str.replace("<video>", "<image>")
