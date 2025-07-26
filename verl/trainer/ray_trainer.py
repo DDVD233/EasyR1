@@ -437,7 +437,7 @@ class RayPPOTrainer:
                     short_answer = sample_outputs[i].split("boxed{")[1].split("}")[0]
                 except IndexError:
                     short_answer = ''
-                answer_is_correct = short_answer == sample_scores[i]
+                answer_is_correct = short_answer == sample_labels[i]
                 f.write(
                     ujson.dumps({
                         "input": sample_inputs[i],
