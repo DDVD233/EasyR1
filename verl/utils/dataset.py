@@ -374,8 +374,8 @@ class RLHFDataset(Dataset, ImageProcessMixin):
                 if content:
                     content_list.append({"type": "text", "text": content})
 
-            if self.time_series_key in example and example[self.time_series_key]:
-                content_list.append({"type": "time-series"})  # add time series token
+            # if self.time_series_key in example and example[self.time_series_key]:
+            #     content_list.append({"type": "time-series"})  # add time series token
 
             return [{"role": "user", "content": content_list}]
         else:
