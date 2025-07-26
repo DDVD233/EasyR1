@@ -22,7 +22,6 @@ import torch
 from ...utils.py_functional import is_transformers_version_greater_than
 from .flash_attention_utils import flash_attention_forward
 
-
 if is_transformers_version_greater_than("4.52.0"):
     from transformers.models.qwen2_vl.modeling_qwen2_vl import (
         Qwen2VLAttention,
