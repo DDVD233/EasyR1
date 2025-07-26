@@ -18,6 +18,12 @@ from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
 from .transformers.flash_attention_utils import flash_attention_forward
 from .transformers.qwen2_vl import qwen2_vl_attn_forward
 from ..utils.py_functional import is_transformers_version_greater_than
+from .transformers.qwen2_vl import (
+    qwen2_vl_attn_forward,
+    qwen2_vl_base_forward_new,
+    qwen2_vl_forward_new,
+    qwen2_vl_forward_old,
+)
 
 from typing import Any, Optional, Mapping
 
