@@ -332,7 +332,7 @@ class RayPPOTrainer:
         all_datasets = []
         data_source_lst = []
 
-        for test_data in self.val_dataloader:
+        for i, test_data in enumerate(tqdm(self.val_dataloader, desc="Validating", total=len(self.val_dataloader))):
             test_batch = DataProto.from_single_dict(test_data)
 
             # Store original inputs and ground truths
@@ -393,6 +393,10 @@ class RayPPOTrainer:
             data_source_lst.append(
                 test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0])
             )
+
+            if i % 100 == 0:
+                self.save_generations(sample_datapaths, sample_datasets, sample_inputs, sample_labels, sample_outputs,
+                                      sample_scores)
 
         reward_tensor = torch.cat(reward_tensor_lst, dim=0).sum(-1).cpu()  # (batch_size,)
         data_sources = np.concatenate(data_source_lst, axis=0)

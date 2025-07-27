@@ -7,7 +7,7 @@ data:
   max_prompt_length: 4000
   max_response_length: 4000
   rollout_batch_size: 512
-  val_batch_size: 1024
+  val_batch_size: 4096
   format_prompt: ./examples/format_prompt/medical_format.jinja
   shuffle: true
   seed: 1
