@@ -358,7 +358,7 @@ def medical_compute_score(predict_str: str, ground_truth: str, segmentation_mask
             # traceback.print_exc()
 
     scores = {
-        "overall": 0.5 * standard_score + 0.3 * iou_score + 0.1 * format_score + 0.1 * length_score,
+        "overall": 0.2 * standard_score + 0.6 * iou_score + 0.1 * format_score + 0.1 * length_score,
         "standard_score": standard_score,
         "iou_score": iou_score,
         "format_score": format_score,
