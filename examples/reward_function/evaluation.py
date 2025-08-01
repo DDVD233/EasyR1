@@ -217,10 +217,10 @@ def age(predictions: List[str], ground_truths: List[str], demographics: List[str
             if age_val <= 25:
                 groups["a1"]["preds"].append(pred)
                 groups["a1"]["gts"].append(gt)
-            elif 35 < age_val <= 50:
+            elif 25 < age_val <= 50:
                 groups["a2"]["preds"].append(pred)
                 groups["a2"]["gts"].append(gt)
-            elif 51 < age_val <= 75:
+            elif 50 < age_val <= 75:
                 groups["a3"]["preds"].append(pred)
                 groups["a3"]["gts"].append(gt)
             elif 75 < age_val:
