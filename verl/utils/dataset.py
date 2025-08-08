@@ -802,7 +802,7 @@ class RLHFDataset(Dataset):
         example["attention_mask"] = attention_mask
         example["position_ids"] = position_ids
         example["raw_prompt_ids"] = raw_prompt_ids
-        example["ground_truth"] = example.pop(self.answer_key)
+        example["ground_truth"] = example[self.answer_key]
 
         # Clean up
         example.pop("segmentation_path", None)
