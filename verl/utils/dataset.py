@@ -200,6 +200,8 @@ def sample_video_frames_uniformly(
     Returns:
         List of PIL Images representing sampled frames
     """
+    decoder = None
+
     try:
         # Adjust max_pixels to account for multiple frames
         if max_pixels is not None:
@@ -212,45 +214,183 @@ def sample_video_frames_uniformly(
         else:
             min_pixels_per_frame = None
 
-        # Use torchcodec to load video and get frame count
-        decoder = VideoDecoder(video_path)
-        total_frames = decoder.metadata.num_frames
+        # Pre-validation of video file
+        if not os.path.exists(video_path):
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        file_size = os.path.getsize(video_path)
+        if file_size == 0:
+            raise ValueError(f"Video file is empty: {video_path}")
+
+        if file_size < 1024:  # Less than 1KB is suspicious
+            logger.warning(f"Video file suspiciously small ({file_size} bytes): {video_path}")
+
+        # Try to check file header to ensure it's a valid video file
+        try:
+            with open(video_path, 'rb') as f:
+                header = f.read(12)
+                if len(header) < 12:
+                    raise ValueError(f"Cannot read file header: {video_path}")
+        except IOError as e:
+            raise ValueError(f"Cannot read video file: {video_path}") from e
+
+        # Create VideoDecoder with error handling
+        try:
+            decoder = VideoDecoder(video_path)
+        except RuntimeError as e:
+            # Common torchcodec errors
+            logger.warning(f"TorchCodec RuntimeError creating decoder for {video_path}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to create VideoDecoder for {video_path}: {type(e).__name__}: {str(e)}")
+            raise
+
+        # Validate decoder and get metadata
+        try:
+            if not hasattr(decoder, 'metadata'):
+                raise ValueError(f"Decoder has no metadata attribute for {video_path}")
+
+            total_frames = decoder.metadata.num_frames
+
+            # Validate frame count
+            if total_frames <= 0:
+                raise ValueError(f"Video has {total_frames} frames: {video_path}")
+
+        except AttributeError as e:
+            logger.warning(f"Failed to get metadata from video {video_path}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.warning(f"Error accessing video metadata for {video_path}: {str(e)}")
+            raise
 
         # Sample frame indices uniformly
         if total_frames <= num_frames:
             # If we have fewer frames than requested, use all frames and repeat last
             indices = list(range(total_frames))
             while len(indices) < num_frames:
-                indices.append(total_frames - 1)
+                indices.append(max(0, total_frames - 1))  # Ensure index is valid
         else:
             # Sample uniformly
             indices = np.linspace(0, total_frames - 1, num_frames, dtype=int).tolist()
 
-        # Get frames at sampled indices
-        frames_tensor = decoder.get_frames_at(indices=indices).data  # (T, C, H, W)
+        # Validate indices
+        indices = [min(max(0, idx), total_frames - 1) for idx in indices]
+
+        # Get frames at sampled indices with error handling
+        frames_tensor = None
+        try:
+            frames_data = decoder.get_frames_at(indices=indices)
+            if frames_data is None:
+                raise ValueError(f"get_frames_at returned None for {video_path}")
+
+            frames_tensor = frames_data.data  # (T, C, H, W)
+
+            if frames_tensor is None or frames_tensor.numel() == 0:
+                raise ValueError(f"Empty frames tensor for {video_path}")
+
+        except RuntimeError as e:
+            # Common error when indices are out of bounds or decoder fails
+            logger.warning(f"RuntimeError getting frames at indices {indices} for {video_path}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to get frames for {video_path}: {type(e).__name__}: {str(e)}")
+            raise
+
+        # Validate frames tensor shape
+        if len(frames_tensor.shape) != 4:
+            raise ValueError(f"Unexpected frames tensor shape {frames_tensor.shape} for {video_path}")
+
+        if frames_tensor.shape[0] != len(indices):
+            logger.warning(f"Got {frames_tensor.shape[0]} frames but expected {len(indices)} for {video_path}")
 
         # Convert to PIL images and resize if needed
         pil_frames = []
-        for i in range(frames_tensor.shape[0]):
-            frame = frames_tensor[i].permute(1, 2, 0).cpu().numpy()  # (H, W, C)
-            frame = (frame * 255).astype(np.uint8) if frame.max() <= 1.0 else frame.astype(np.uint8)
-            pil_image = Image.fromarray(frame)
+        for i in range(min(frames_tensor.shape[0], num_frames)):
+            try:
+                # Extract single frame
+                frame = frames_tensor[i]
 
-            # Process image with size constraints
-            processed_image = process_image(pil_image, min_pixels_per_frame, max_pixels_per_frame)
-            pil_frames.append(processed_image)
+                # Validate frame
+                if frame.numel() == 0:
+                    raise ValueError(f"Empty frame at index {i}")
+
+                # Convert to numpy with proper error handling
+                frame_np = frame.permute(1, 2, 0).cpu().numpy()  # (H, W, C)
+
+                # Validate numpy array
+                if frame_np.size == 0:
+                    raise ValueError(f"Empty numpy array for frame {i}")
+
+                # Handle different data ranges
+                if frame_np.max() <= 1.0:
+                    frame_np = (frame_np * 255).astype(np.uint8)
+                else:
+                    frame_np = np.clip(frame_np, 0, 255).astype(np.uint8)
+
+                # Create PIL image
+                pil_image = Image.fromarray(frame_np)
+
+                # Validate PIL image
+                if pil_image.size == (0, 0):
+                    raise ValueError(f"Created empty PIL image for frame {i}")
+
+                # Process image with size constraints
+                processed_image = process_image(pil_image, min_pixels_per_frame, max_pixels_per_frame)
+                pil_frames.append(processed_image)
+
+            except Exception as e:
+                logger.warning(f"Failed to process frame {i} from {video_path}: {type(e).__name__}: {str(e)}")
+                # Add a black frame instead of failing completely
+                placeholder_size = 224
+                if max_pixels_per_frame is not None:
+                    size_per_frame = int(np.sqrt(max_pixels_per_frame))
+                    placeholder_size = min(size_per_frame, 512)
+                pil_frames.append(Image.new('RGB', (placeholder_size, placeholder_size), color='black'))
+
+        # Ensure we have the right number of frames
+        while len(pil_frames) < num_frames:
+            # Pad with black frames if needed
+            placeholder_size = 224
+            if max_pixels_per_frame is not None:
+                size_per_frame = int(np.sqrt(max_pixels_per_frame))
+                placeholder_size = min(size_per_frame, 512)
+            pil_frames.append(Image.new('RGB', (placeholder_size, placeholder_size), color='black'))
+
+        # Validate final output
+        if len(pil_frames) != num_frames:
+            logger.warning(f"Frame count mismatch: got {len(pil_frames)}, expected {num_frames}")
+            pil_frames = pil_frames[:num_frames]  # Trim if too many
 
         return pil_frames
 
+    except FileNotFoundError as e:
+        logger.warning(f"Video file not found: {str(e)}")
+    except ValueError as e:
+        logger.warning(f"Video validation error: {str(e)}")
     except Exception as e:
-        logger.warning(f"Failed to sample video frames from {video_path}: {str(e)}. Returning black frames.")
-        # Return black frames as placeholder
-        placeholder_size = 224
-        if max_pixels is not None:
-            # Estimate a reasonable size based on max_pixels
-            size_per_frame = int(np.sqrt(max_pixels // num_frames))
-            placeholder_size = min(size_per_frame, 512)
-        return [Image.new('RGB', (placeholder_size, placeholder_size), color='black') for _ in range(num_frames)]
+        logger.warning(f"Unexpected error sampling video frames from {video_path}: {type(e).__name__}: {str(e)}")
+        logger.debug(f"Full traceback: {traceback.format_exc()}")
+
+    finally:
+        # Clean up decoder resources
+        if decoder is not None:
+            try:
+                del decoder
+                # Force garbage collection for large video decoders
+                import gc
+                gc.collect()
+            except Exception as e:
+                logger.debug(f"Error cleaning up decoder: {str(e)}")
+
+    # Return black frames as final fallback
+    logger.info(f"Returning {num_frames} black placeholder frames for {video_path}")
+    placeholder_size = 224
+    if max_pixels is not None:
+        # Estimate a reasonable size based on max_pixels
+        size_per_frame = int(np.sqrt(max_pixels // num_frames))
+        placeholder_size = min(size_per_frame, 512)
+
+    return [Image.new('RGB', (placeholder_size, placeholder_size), color='black') for _ in range(num_frames)]
 
 
 def resize_bbox(bbox, original_width, original_height, new_width, new_height):
