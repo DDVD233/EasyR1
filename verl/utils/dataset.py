@@ -701,7 +701,7 @@ class RLHFDataset(Dataset):
         if 'processed_images' in locals() and processed_images:
             target_size = processed_images[0].size
 
-        if example["segmentation_mask"] is not None:
+        if "segmentation_mask" in example and example["segmentation_mask"] is not None:
             try:
                 # Extract dimensions from image_grid_thw (time, height, width)
                 # We need the height and width for resizing
