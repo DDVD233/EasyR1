@@ -657,6 +657,11 @@ class RLHFDataset(Dataset):
             attention_mask = model_inputs.pop("attention_mask")[0]
             example["multi_modal_data"] = {}
 
+        if len(processed_images) > 0:
+            image_size = processed_images[0].size
+        else:
+            image_size = (224, 224)
+
         if self.enable_time_series:
             example["multi_modal_data"][self.time_series_key] = processed_time_series
 
@@ -696,40 +701,37 @@ class RLHFDataset(Dataset):
         if 'processed_images' in locals() and processed_images:
             target_size = processed_images[0].size
 
-        # Handle segmentation mask if available
-        if "segmentation_path" in example and example["segmentation_path"]:
+        if example["segmentation_mask"] is not None:
             try:
-                seg_path = os.path.join(self.image_dir or "", example["segmentation_path"])
-                if os.path.exists(seg_path):
-                    logger.debug(f"Loading segmentation mask from {seg_path}")
-                    segmentation_mask = Image.open(seg_path)
+                # Extract dimensions from image_grid_thw (time, height, width)
+                # We need the height and width for resizing
+                target_height, target_width = example
 
-                    # Resize the segmentation mask to match the processed image dimensions
-                    resized_mask = segmentation_mask.resize(
-                        target_size,
-                        resample=Image.Resampling.NEAREST
-                    )
+                # Resize the segmentation mask to match the processed image dimensions
+                resized_mask = example["segmentation_mask"].resize(
+                    (target_width, target_height),
+                    resample=Image.Resampling.NEAREST
+                )
 
-                    mask_array = np.array(resized_mask)
+                mask_array = np.array(resized_mask)
 
-                    # If mask is grayscale, keep as 2D
-                    if len(mask_array.shape) == 3 and mask_array.shape[2] == 3:
-                        # If mask is RGB, convert to grayscale
-                        mask_array = np.mean(mask_array, axis=2)
+                # If mask is grayscale, add channel dimension
+                if len(mask_array.shape) == 2:
+                    mask_array = mask_array[np.newaxis, :, :]
+                # If mask is RGB but we only need one channel for segmentation
+                elif len(mask_array.shape) == 3 and mask_array.shape[2] == 3:
+                    mask_array = np.mean(mask_array, axis=2)[np.newaxis, :, :]
 
-                    example["segmentation_mask"] = mask_array.astype(np.uint8)
-                else:
-                    logger.warning(f"Segmentation mask not found: {seg_path}")
-                    example["segmentation_mask"] = None
+                # Convert to torch tensor
+                # mask_tensor = torch.from_numpy(mask_array).float()
+                example["segmentation_mask"] = mask_array
             except Exception as e:
-                logger.error(f"Error loading segmentation mask: {str(e)}")
-                example["segmentation_mask"] = None
-        else:
-            example["segmentation_mask"] = None
+                logger.error(traceback.format_exc())
 
-        # Create default segmentation mask if none exists
-        if example["segmentation_mask"] is None:
-            example["segmentation_mask"] = np.zeros(target_size[::-1], dtype=np.uint8)  # (height, width)
+        if "segmentation_mask" not in example or example["segmentation_mask"] is None:
+            target_width, target_height = image_size
+            # row_dict["segmentation_mask"] = torch.zeros(1, target_height, target_width, dtype=torch.float32)
+            example["segmentation_mask"] = np.zeros((target_height, target_width), dtype=np.uint8)
 
         # Handle bounding box information
         if "bbox" in example and example["bbox"] and original_dimensions:
