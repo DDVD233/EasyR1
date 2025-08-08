@@ -76,44 +76,42 @@ def collate_fn(features: List[Dict[str, Any]]) -> Dict[str, Any]:
                 non_tensors[key].append(value)
 
     # Second pass: pad segmentation masks to max dimensions
-    if seg_masks:
-        padded_masks = []
-        for mask in seg_masks:
-            if mask is None:
-                # Create zero array for missing segmentation masks
-                padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
+    padded_masks = []
+    for mask in seg_masks:
+        if mask is None:
+            # Create zero array for missing segmentation masks
+            padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
+        else:
+            # Get current dimensions
+            if len(mask.shape) == 3:  # [C, H, W]
+                c, h, w = mask.shape
+                # Calculate padding (bottom, right)
+                pad_bottom = max_height - h
+                pad_right = max_width - w
+                # Pad the mask using numpy padding
+                padded_mask = np.pad(mask, ((0, 0), (0, pad_bottom), (0, pad_right)),
+                                     mode='constant', constant_values=0)
+                padded_masks.append(padded_mask)
+            elif len(mask.shape) == 2:  # [H, W]
+                h, w = mask.shape
+                # Calculate padding (bottom, right)
+                pad_bottom = max_height - h
+                pad_right = max_width - w
+                # Pad the mask using numpy padding
+                padded_mask = np.pad(mask, ((0, pad_bottom), (0, pad_right)),
+                                     mode='constant', constant_values=0)
+                padded_mask = padded_mask[np.newaxis, :, :]  # Add channel dimension
+                padded_masks.append(padded_mask)
             else:
-                # Get current dimensions
-                if len(mask.shape) == 3:  # [C, H, W]
-                    c, h, w = mask.shape
-                    # Calculate padding (bottom, right)
-                    pad_bottom = max_height - h
-                    pad_right = max_width - w
-                    # Pad the mask using numpy padding
-                    padded_mask = np.pad(mask, ((0, 0), (0, pad_bottom), (0, pad_right)),
-                                         mode='constant', constant_values=0)
-                    padded_masks.append(padded_mask)
-                elif len(mask.shape) == 2:  # [H, W]
-                    h, w = mask.shape
-                    # Calculate padding (bottom, right)
-                    pad_bottom = max_height - h
-                    pad_right = max_width - w
-                    # Pad the mask using numpy padding
-                    padded_mask = np.pad(mask, ((0, pad_bottom), (0, pad_right)),
-                                         mode='constant', constant_values=0)
-                    padded_mask = padded_mask[np.newaxis, :, :]  # Add channel dimension
-                    padded_masks.append(padded_mask)
-                else:
-                    # Handle unexpected shapes
-                    padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
+                # Handle unexpected shapes
+                padded_masks.append(np.zeros((1, max_height, max_width), dtype=np.float32))
 
-        # Convert padded segmentation masks to tensor and add to tensors
-        tensors["segmentation_mask"] = torch.from_numpy(np.stack(padded_masks, axis=0)).float()
+    # Add padded segmentation masks to non_tensors
+    non_tensors["segmentation_mask"] = np.stack(padded_masks, axis=0)
 
     # Stack other tensors
     for key, value in tensors.items():
-        if key != "segmentation_mask":  # We've already handled segmentation masks
-            tensors[key] = torch.stack(value, dim=0)
+        tensors[key] = torch.stack(value, dim=0)
 
     # Convert other non-tensors to arrays
     for key, value in non_tensors.items():
