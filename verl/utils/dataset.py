@@ -422,10 +422,15 @@ class RLHFDataset(Dataset):
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
             # Convert videos to sampled frames
-            video_frames = []
-            for video in videos:
-                frames = sample_video_frames_uniformly(video, self.limit_video_frames, self.min_pixels, self.max_pixels)
-                video_frames.extend(frames)
+            try:
+                video_frames = []
+                for video in videos:
+                    frames = sample_video_frames_uniformly(video, self.limit_video_frames, self.min_pixels, self.max_pixels)
+                    video_frames.extend(frames)
+            except Exception as e:
+                logger.error(f"Failed to process video frames for {example.get('id', 'unknown')}: {str(e)}")
+                # Fallback to a single black frame if video processing fails
+                video_frames = [Image.new('RGB', (224, 224), color='black')] * self.limit_video_frames
 
             # Replace <video> with multiple <image> tags in the prompt
             prompt_str = example[self.prompt_key]
