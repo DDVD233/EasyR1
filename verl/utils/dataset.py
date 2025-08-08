@@ -418,7 +418,6 @@ class RLHFDataset(Dataset):
             image_key: str = "images",
             video_key: str = "videos",
             time_series_key: str = "time-series",
-            image_dir: Optional[str] = None,
             video_fps: float = 2.0,
             max_prompt_length: int = 1024,
             truncation: str = "error",
@@ -437,7 +436,6 @@ class RLHFDataset(Dataset):
         self.image_key = image_key
         self.video_key = video_key
         self.time_series_key = time_series_key
-        self.image_dir = image_dir
         self.video_fps = video_fps
         self.max_prompt_length = max_prompt_length
         self.truncation = truncation
@@ -461,6 +459,9 @@ class RLHFDataset(Dataset):
         else:
             # load remote dataset from huggingface hub
             self.dataset = load_dataset(data_path, split=data_split)
+
+        self.base_path = os.path.dirname(data_path) if os.path.isfile(data_path) else data_path
+        self.image_dir = self.base_path
 
         self.format_prompt = None
         if format_prompt:
