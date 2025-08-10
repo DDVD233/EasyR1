@@ -220,9 +220,9 @@ class RLHFDataset(Dataset):
         messages = self._build_messages(example)
         # example.pop(self.prompt_key, None)
 
-        if self.image_key in example:
+        if self.image_key in example and len(example[self.image_key]) > 0:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-            images = example.pop(self.image_key)
+            images = example[self.image_key]
             if self.image_dir is not None and len(images) != 0 and isinstance(images[0], str):  # image paths
                 images = [os.path.join(self.image_dir, image) for image in images]
 
@@ -234,9 +234,9 @@ class RLHFDataset(Dataset):
             input_ids = model_inputs.pop("input_ids")[0]
             attention_mask = model_inputs.pop("attention_mask")[0]
             example["multi_modal_data"] = {"images": images}
-        elif self.video_key in example:
+        elif self.video_key in example and len(example[self.video_key]) > 0:
             prompt = self.processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
-            videos = example.pop(self.video_key)
+            videos = example[self.video_key]
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths
                 videos = [os.path.join(self.image_dir, video) for video in videos]
 
