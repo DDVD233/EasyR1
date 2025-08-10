@@ -23,11 +23,13 @@ from collections import defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import IntEnum, auto
-from typing import Any, Optional, Type
+from typing import Any, Optional, Type, Dict
 
 import numpy as np
 import ray
 import torch
+import ujson
+import wandb
 from ray.experimental.tqdm_ray import tqdm
 from torchdata.stateful_dataloader import StatefulDataLoader
 from transformers import PreTrainedTokenizer, ProcessorMixin
@@ -59,6 +61,7 @@ from .metrics import (
     compute_timing_metrics,
     reduce_metrics,
 )
+from examples.reward_function.evaluation import compute_metrics_by_data_source
 
 
 class Role(IntEnum):
@@ -390,6 +393,16 @@ class RayPPOTrainer:
         reward_tensor_lst = []
         # Lists to collect samples for the table
         sample_inputs, sample_outputs, sample_labels, sample_scores = [], [], [], []
+        sample_datasets, sample_datapaths = [], []
+
+        # New lists for metric calculation
+        all_predictions = []
+        all_ground_truths = []
+        all_data_sources = []
+        all_demographics = []
+        all_datasets = []
+        data_source_lst = []
+
         reward_metrics_lst = defaultdict(list)
         length_metrics_lst = defaultdict(list)
         print("Start validation...")
@@ -410,6 +423,12 @@ class RayPPOTrainer:
             test_output_gen_batch = self.actor_rollout_ref_wg.generate_sequences(test_gen_batch)
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch, pad_size=pad_size * repeat_times)
 
+            ground_truths = test_batch.non_tensor_batch["answer"]
+            data_sources = test_batch.non_tensor_batch.get("data_source", ["unknown"] * len(input_texts))
+            datasets = test_batch.non_tensor_batch.get("dataset", ["unknown"] * len(input_texts))
+            demographics = test_batch.non_tensor_batch.get("demo", ["unknown"] * len(input_texts))
+            data_paths = test_batch.non_tensor_batch.get("vision_path", ["unknown"] * len(input_texts))
+
             # repeat to align with repeated responses in rollout
             test_batch = test_batch.repeat(repeat_times=repeat_times, interleave=True)
             test_batch = test_batch.union(test_output_gen_batch)
@@ -428,9 +447,20 @@ class RayPPOTrainer:
             sample_labels.extend(test_batch.non_tensor_batch["ground_truth"].tolist())
             sample_scores.extend(scores)
 
+            # Collect for metrics calculation
+            all_predictions.extend(output_texts)
+            all_ground_truths.extend(ground_truths)
+            all_data_sources.extend(data_sources)
+            all_datasets.extend(datasets)
+            all_demographics.extend(demographics)
+
             reward_tensor_lst.append(reward_tensor)
             for key, value in reward_metrics.items():
                 reward_metrics_lst[key].extend(value)
+
+            data_source_lst.append(
+                test_batch.non_tensor_batch.get("data_source", ["unknown"] * reward_tensor.shape[0])
+            )
 
             for key, value in compute_length_metrics(test_batch).items():
                 length_metrics_lst[key].append(value)
@@ -438,10 +468,58 @@ class RayPPOTrainer:
         self.actor_rollout_ref_wg.release_rollout_engine()
         self._maybe_log_val_generations(sample_inputs, sample_outputs, sample_labels, sample_scores)
         self.val_reward_score = torch.cat(reward_tensor_lst, dim=0).sum(-1).mean().item()
+
+        data_sources = np.concatenate(data_source_lst, axis=0)
+        # Evaluate test_score based on data source
+        data_source_reward = {}
+        for i in range(reward_tensor.shape[0]):
+            data_source = data_sources[i]
+            if data_source not in data_source_reward:
+                data_source_reward[data_source] = []
+            data_source_reward[data_source].append(reward_tensor[i].item())
+
+        metric_dict = {}
+        for data_source, rewards in data_source_reward.items():
+            metric_dict[f"val/test_score/{data_source}"] = np.mean(rewards)
+        wandb.log(metric_dict, step=self.global_step)
+        self.save_generations(sample_datapaths, sample_datasets, sample_inputs, sample_labels, sample_outputs,
+                              sample_scores)
+
+        # Per data source metrics
+        metrics = compute_metrics_by_data_source(all_predictions, all_ground_truths,
+                                                 all_data_sources, all_datasets, all_demographics)
+        metric_dict.update(**metrics)
+
         val_reward_metrics = {f"val/{key}_reward": value for key, value in reduce_metrics(reward_metrics_lst).items()}
         val_length_metrics = {f"val_{key}": value for key, value in reduce_metrics(length_metrics_lst).items()}
         print("Finish validation.")
         return {"val/reward_score": self.val_reward_score, **val_reward_metrics, **val_length_metrics}
+
+    def save_generations(self, sample_datapaths, sample_datasets, sample_inputs, sample_labels, sample_outputs,
+                         sample_scores):
+        generation_save_folder = os.path.join(self.config.trainer.save_checkpoint_path,
+                                              f"global_step_{self.global_step}")
+        if not os.path.exists(generation_save_folder):
+            os.makedirs(generation_save_folder, exist_ok=True)
+        with open(os.path.join(generation_save_folder, "generations.jsonl"), "w") as f:
+            for i in range(len(sample_inputs)):
+                try:
+                    short_answer = sample_outputs[i].split("boxed{")[1].split("}")[0]
+                except IndexError:
+                    short_answer = ''
+                answer_is_correct = short_answer == sample_labels[i]
+                f.write(
+                    ujson.dumps({
+                        "input": sample_inputs[i],
+                        "generations": sample_outputs[i],
+                        "short_answer": short_answer,
+                        "answer_is_correct": answer_is_correct,
+                        "label": sample_labels[i],
+                        "score": sample_scores[i],
+                        "dataset": sample_datasets[i],
+                        "datapath": sample_datapaths[i],
+                    }) + "\n"
+                )
 
     def _balance_batch(self, batch: DataProto, metrics: dict[str, Any], logging_prefix: str = "global_seqlen") -> None:
         """Reorder the data on single controller such that each dp rank gets similar total tokens"""

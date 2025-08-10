@@ -286,6 +286,37 @@ class RLHFDataset(Dataset):
             left_pad=True,
             truncation=self.truncation,
         )
+
+        is_timeseries = False
+        vision_path = example['images'][0] if 'images' in example and len(example['images']) != 0 else None
+        if vision_path is None:  # this may be video
+            vision_path = example['videos'][0] if 'videos' in example and len(example['videos']) != 0 else None
+        if vision_path is None:  # this may be time series only
+            vision_path = example['time_series'][0] if 'time_series' in example and len(
+                example['time_series']) != 0 else ''
+            is_timeseries = True
+        prompt_str = example[self.prompt_key]
+
+        if 'How long will the patient stay in the hospital?' in prompt_str:
+            example["data_source"] = "multimodal"
+            example["dataset"] = "los_prediction"
+        elif 'Will the patient survive for at least 48 hours?' in prompt_str:
+            example["data_source"] = "multimodal"
+            example["dataset"] = "48_ihm"
+        elif len(vision_path) != 0:
+            try:
+                example["data_source"] = vision_path.split("/")[0]
+                example["dataset"] = vision_path.split("/")[1]
+            except IndexError:
+                example["data_source"] = "unknown"
+                example["dataset"] = "unknown"
+                print(f"Failed to parse vision path: {vision_path}. The annotation is {example}. Using default values.")
+        elif is_timeseries:
+            example["data_source"] = "ecg"
+            # dataset already set in json
+        else:
+            raise ValueError("No modality found.")
+
         raw_prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
         if len(raw_prompt_ids) > self.max_prompt_length:
             if self.truncation == "left":
