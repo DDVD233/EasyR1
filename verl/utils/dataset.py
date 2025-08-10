@@ -537,7 +537,6 @@ class RLHFDataset(Dataset):
         # If we have videos, convert them to frames and update the prompt
         if self.video_key in example and len(example[self.video_key]) > 0:
             if "<video>" not in example[self.prompt_key]:
-                logger.warning(f"Video key found in example {example.get('id', 'unknown')} but no <video> tag in prompt.")
                 example[self.prompt_key] = "<video>" + example[self.prompt_key]
             videos = example.get(self.video_key, '')
             if self.image_dir is not None and len(videos) != 0 and isinstance(videos[0], str):  # video paths

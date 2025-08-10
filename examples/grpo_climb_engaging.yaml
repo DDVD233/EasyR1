@@ -4,9 +4,9 @@ data:
   prompt_key: problem
   answer_key: answer
   image_key: images
-  max_prompt_length: 4000
+  max_prompt_length: 8192
   max_response_length: 4000
-  rollout_batch_size: 512
+  rollout_batch_size: 1024
   val_batch_size: 1024
   format_prompt: ./examples/format_prompt/medical_format.jinja
   shuffle: true
@@ -24,7 +24,7 @@ algorithm:
 
 worker:
   actor:
-    global_batch_size: 128
+    global_batch_size: 256
     micro_batch_size_per_device_for_update: 2
     micro_batch_size_per_device_for_experience: 8
     max_grad_norm: 1.0
