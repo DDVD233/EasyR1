@@ -18,7 +18,7 @@ data:
   seed: 1
   min_pixels: 65536
   max_pixels: 524288
-  filter_overlong_prompts: true
+  filter_overlong_prompts: false
 
 algorithm:
   adv_estimator: grpo
