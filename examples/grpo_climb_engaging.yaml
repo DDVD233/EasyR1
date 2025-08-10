@@ -57,6 +57,7 @@ worker:
     enable_chunked_prefill: false
     tensor_parallel_size: 1
     limit_images: 4
+    max_num_batched_tokens: 12192
     val_override_config:
       temperature: 0.5
       n: 1
