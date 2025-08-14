@@ -12,9 +12,7 @@ Saves features as PyTorch tensors (.pt):
   - face:  [num_frames, max_faces,  K_face(=98),  3]  (x,y,conf)
   - opensmile: [1, D]  (functionals)
 
-This script is designed to be drop-in compatible with the user's prior script but
-with stronger models by default. It also adapts automatically to the model's
-declared number of keypoints, so if you swap configs/weights, shapes update safely.
+This script uses local mmpose configs to avoid relative referencing issues.
 """
 
 import argparse
@@ -26,9 +24,8 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 import warnings
-import urllib.request
-import tempfile
-import hashlib
+import subprocess
+import sys
 
 warnings.filterwarnings('ignore')
 
@@ -39,6 +36,47 @@ import opensmile
 from mmpose.apis import init_model as init_pose_model, inference_topdown
 from mmdet.apis import init_detector, inference_detector
 from mmpose.utils import adapt_mmdet_pipeline
+
+
+# -------------------------------
+# Setup: Clone repositories
+# -------------------------------
+
+def setup_repos(base_dir=None):
+    """Clone mmpose and mmdetection repositories if not present."""
+    if base_dir is None:
+        base_dir = Path.cwd()
+    else:
+        base_dir = Path(base_dir)
+
+    mmpose_dir = base_dir / 'mmpose'
+    mmdet_dir = base_dir / 'mmdetection'
+
+    # Clone mmpose if not exists
+    if not mmpose_dir.exists():
+        print("Cloning mmpose repository...")
+        subprocess.run([
+            'git', 'clone',
+            'https://github.com/open-mmlab/mmpose.git',
+            str(mmpose_dir)
+        ], check=True)
+        print(f"MMPose cloned to {mmpose_dir}")
+    else:
+        print(f"MMPose already exists at {mmpose_dir}")
+
+    # Clone mmdetection if not exists
+    if not mmdet_dir.exists():
+        print("Cloning mmdetection repository...")
+        subprocess.run([
+            'git', 'clone',
+            'https://github.com/open-mmlab/mmdetection.git',
+            str(mmdet_dir)
+        ], check=True)
+        print(f"MMDetection cloned to {mmdet_dir}")
+    else:
+        print(f"MMDetection already exists at {mmdet_dir}")
+
+    return mmpose_dir, mmdet_dir
 
 
 # -------------------------------
@@ -149,7 +187,7 @@ def extract_pose_features(video_path, output_path, pose_model, detector, body_kp
 
                     for r in pose_results:
                         if hasattr(r, 'pred_instances'):
-                            kpts = r.pred_instances.keypoints[0]         # (K, 2)
+                            kpts = r.pred_instances.keypoints[0]  # (K, 2)
                             scores = r.pred_instances.keypoint_scores[0]  # (K,)
                         else:
                             # Older format, (K,3): x,y,score
@@ -185,7 +223,8 @@ def extract_pose_features(video_path, output_path, pose_model, detector, body_kp
 
     except Exception as e:
         print(f"Error extracting pose features from {video_path}: {e}")
-        import traceback; traceback.print_exc()
+        import traceback;
+        traceback.print_exc()
         return False
 
 
@@ -230,7 +269,7 @@ def extract_face_features(video_path, output_path, face_model, detector, face_kp
 
                         for r in face_results:
                             if hasattr(r, 'pred_instances'):
-                                kpts = r.pred_instances.keypoints[0]         # (K,2)
+                                kpts = r.pred_instances.keypoints[0]  # (K,2)
                                 scores = r.pred_instances.keypoint_scores[0]  # (K,)
                             else:
                                 kpts = r.keypoints[0][:, :2]
@@ -265,7 +304,8 @@ def extract_face_features(video_path, output_path, face_model, detector, face_kp
 
     except Exception as e:
         print(f"Error extracting face features from {video_path}: {e}")
-        import traceback; traceback.print_exc()
+        import traceback;
+        traceback.print_exc()
         return False
 
 
@@ -273,80 +313,70 @@ def extract_face_features(video_path, output_path, face_model, detector, face_kp
 # Model initialization
 # -------------------------------
 
-def download_config(url, filename=None):
-    """Download a config file to a temp cache, namespaced by URL."""
-    temp_dir = Path(tempfile.gettempdir()) / 'mmpose_configs'
-    temp_dir.mkdir(parents=True, exist_ok=True)
+def init_models(device='cuda:0', repos_dir=None):
+    """Initialize detector + high-accuracy body & face models using local configs.
 
-    if filename is None:
-        digest = hashlib.md5(url.encode()).hexdigest()
-        filename = f'{digest}.py'
-
-    config_path = temp_dir / filename
-    if not config_path.exists():
-        print(f"Downloading config: {filename}")
-        urllib.request.urlretrieve(url, config_path)
-
-    print(config_path)
-
-    return str(config_path)
-
-
-def init_models(device='cuda:0',
-                det_config_url=None, det_ckpt_url=None,
-                pose_config_url=None, pose_ckpt_url=None,
-                face_config_url=None, face_ckpt_url=None):
-    """Initialize detector + high-accuracy body & face models.
-
-    You can override any of the URLs above via CLI flags if the defaults change.
+    Args:
+        device: Device for models (cuda:0 or cpu)
+        repos_dir: Directory containing cloned mmpose and mmdetection repos
     """
     print("Initializing models...")
 
-    # Defaults (picked for accuracy)
-    det_config_url = det_config_url or (
-        'https://raw.githubusercontent.com/open-mmlab/mmdetection/main/'
-        'configs/rtmdet/rtmdet_l_8xb32-300e_coco.py'
-    )
-    det_ckpt_url = det_ckpt_url or (
+    # Setup repositories
+    if repos_dir is None:
+        repos_dir = Path.cwd()
+    else:
+        repos_dir = Path(repos_dir)
+
+    mmpose_dir, mmdet_dir = setup_repos(repos_dir)
+
+    # Local config paths
+    det_config = str(mmdet_dir / 'configs/rtmdet/rtmdet_l_8xb32-300e_coco.py')
+    pose_config = str(
+        mmpose_dir / 'configs/body_2d_keypoint/topdown_heatmap/coco/td-hm_ViTPose-huge_8xb64-210e_coco-256x192.py')
+    face_config = str(
+        mmpose_dir / 'configs/face_2d_keypoint/topdown_heatmap/wflw/td-hm_hrnetv2-w18_awing-8xb64-60e_wflw-256x256.py')
+
+    # Checkpoint URLs (these still need to be downloaded)
+    det_ckpt_url = (
         'https://download.openmmlab.com/mmdetection/v3.0/rtmdet/'
         'rtmdet_l_8xb32-300e_coco/rtmdet_l_8xb32-300e_coco_20220719_112030-5a0be7c4.pth'
     )
-
-    pose_config_url = pose_config_url or (
-        'https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/'
-        'configs/body_2d_keypoint/topdown_heatmap/coco/'
-        'td-hm_ViTPose-huge_8xb64-210e_coco-256x192.py'
-    )
-    pose_ckpt_url = pose_ckpt_url or (
+    pose_ckpt_url = (
         'https://download.openmmlab.com/mmpose/v1/body_2d_keypoint/topdown_heatmap/coco/'
         'td-hm_ViTPose-huge_8xb64-210e_coco-256x192-e32adcd4_20230314.pth'
     )
-
-    face_config_url = face_config_url or (
-        'https://raw.githubusercontent.com/open-mmlab/mmpose/dev-1.x/'
-        'configs/face_2d_keypoint/topdown_heatmap/wflw/'
-        'td-hm_hrnetv2-w18_awing-8xb64-60e_wflw-256x256.py'
-    )
-    face_ckpt_url = face_ckpt_url or (
+    face_ckpt_url = (
         'https://download.openmmlab.com/mmpose/face/hrnetv2/'
         'hrnetv2_w18_wflw_256x256_awing-5af5055c_20211212.pth'
     )
 
-    # Download configs
-    det_cfg = download_config(det_config_url, 'rtmdet_l_8xb32-300e_coco.py')
-    pose_cfg = download_config(pose_config_url, 'td-hm_ViTPose-huge_256x192.py')
-    face_cfg = download_config(face_config_url, 'td-hm_hrnetv2-w18_awing_wflw_256x256.py')
+    # Check if config files exist
+    for cfg_path, name in [(det_config, 'Detector'), (pose_config, 'Pose'), (face_config, 'Face')]:
+        if not Path(cfg_path).exists():
+            print(f"Error: {name} config not found at {cfg_path}")
+            print(f"Please ensure mmpose and mmdetection are properly cloned at {repos_dir}")
+            sys.exit(1)
+
+    print(f"Using local configs:")
+    print(f"  Detector: {det_config}")
+    print(f"  Pose: {pose_config}")
+    print(f"  Face: {face_config}")
 
     # Build models (pose first -> registry safety in some setups)
-    pose_model = init_pose_model(pose_cfg, pose_ckpt_url, device=device)
-    face_model = init_pose_model(face_cfg, face_ckpt_url, device=device)
+    pose_model = init_pose_model(pose_config, pose_ckpt_url, device=device)
+    face_model = init_pose_model(face_config, face_ckpt_url, device=device)
 
-    detector = init_detector(det_cfg, det_ckpt_url, device=device)
+    detector = init_detector(det_config, det_ckpt_url, device=device)
     detector.cfg = adapt_mmdet_pipeline(detector.cfg)
 
     # Detect keypoint counts dynamically (for robust zero-filling & packing)
     body_k = _keypoint_count_from_model(pose_model, fallback=17)
     face_k = _keypoint_count_from_model(face_model, fallback=98)
+
+    print(f"Models initialized successfully:")
+    print(f"  Body keypoints: {body_k}")
+    print(f"  Face keypoints: {face_k}")
 
     return detector, pose_model, face_model, body_k, face_k
 
@@ -355,11 +385,7 @@ def init_models(device='cuda:0',
 # Annotation processing
 # -------------------------------
 
-def process_annotations(annotation_path,
-                        device='cuda:0',
-                        det_config_url=None, det_ckpt_url=None,
-                        pose_config_url=None, pose_ckpt_url=None,
-                        face_config_url=None, face_ckpt_url=None):
+def process_annotations(annotation_path, device='cuda:0', repos_dir=None):
     """Process all videos/audios listed in the JSONL annotation file."""
 
     base_dir = Path(annotation_path).parent
@@ -367,9 +393,7 @@ def process_annotations(annotation_path,
     # Init models
     detector, pose_model, face_model, body_k, face_k = init_models(
         device=device,
-        det_config_url=det_config_url, det_ckpt_url=det_ckpt_url,
-        pose_config_url=pose_config_url, pose_ckpt_url=pose_ckpt_url,
-        face_config_url=face_config_url, face_ckpt_url=face_ckpt_url
+        repos_dir=repos_dir
     )
 
     # Read annotations
@@ -462,28 +486,21 @@ def process_annotations(annotation_path,
 # -------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description='Extract OpenSmile, body pose, and face keypoints from clinical videos/audios')
+    parser = argparse.ArgumentParser(
+        description='Extract OpenSmile, body pose, and face keypoints from clinical videos/audios')
     parser.add_argument('annotation_path', type=str, nargs='?',
                         default='/orcd/scratch/seedfund/001/multimodal/dvd/human_behaviour_data/train_template_prompts.jsonl',
                         help='Path to the annotation JSONL file')
     parser.add_argument('--device', type=str, default='cuda:0', help='Device for models, e.g., cuda:0 or cpu')
-
-    # Optional overrides for configs/checkpoints (if URLs change)
-    parser.add_argument('--det-config-url', type=str, default=None)
-    parser.add_argument('--det-ckpt-url', type=str, default=None)
-    parser.add_argument('--pose-config-url', type=str, default=None)
-    parser.add_argument('--pose-ckpt-url', type=str, default=None)
-    parser.add_argument('--face-config-url', type=str, default=None)
-    parser.add_argument('--face-ckpt-url', type=str, default=None)
+    parser.add_argument('--repos-dir', type=str, default=None,
+                        help='Directory to clone/find mmpose and mmdetection repos (default: current directory)')
 
     args = parser.parse_args()
 
     process_annotations(
         args.annotation_path,
         device=args.device,
-        det_config_url=args.det_config_url, det_ckpt_url=args.det_ckpt_url,
-        pose_config_url=args.pose_config_url, pose_ckpt_url=args.pose_ckpt_url,
-        face_config_url=args.face_config_url, face_ckpt_url=args.face_ckpt_url
+        repos_dir=args.repos_dir
     )
 
 
