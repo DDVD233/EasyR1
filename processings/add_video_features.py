@@ -287,6 +287,8 @@ def download_config(url, filename=None):
         print(f"Downloading config: {filename}")
         urllib.request.urlretrieve(url, config_path)
 
+    print(config_path)
+
     return str(config_path)
 
 
