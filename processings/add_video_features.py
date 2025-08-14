@@ -363,17 +363,12 @@ def process_annotations(annotation_path,
     base_dir = Path(annotation_path).parent
 
     # Init models
-    try:
-        detector, pose_model, face_model, body_k, face_k = init_models(
-            device=device,
-            det_config_url=det_config_url, det_ckpt_url=det_ckpt_url,
-            pose_config_url=pose_config_url, pose_ckpt_url=pose_ckpt_url,
-            face_config_url=face_config_url, face_ckpt_url=face_ckpt_url
-        )
-    except Exception as e:
-        print(f"Error initializing models: {e}")
-        print("Make sure mmpose==1.x and mmdetection are installed correctly, and CUDA is available if using cuda device.")
-        return
+    detector, pose_model, face_model, body_k, face_k = init_models(
+        device=device,
+        det_config_url=det_config_url, det_ckpt_url=det_ckpt_url,
+        pose_config_url=pose_config_url, pose_ckpt_url=pose_ckpt_url,
+        face_config_url=face_config_url, face_ckpt_url=face_ckpt_url
+    )
 
     # Read annotations
     annotations = []
