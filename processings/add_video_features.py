@@ -377,12 +377,24 @@ def process_annotations(annotation_path,
 
     # Read annotations
     annotations = []
-    with open(annotation_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            annotations.append(json.loads(line))
+    if annotation_path.endswith('.jsonl'):
+        with open(annotation_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                annotations.append(json.loads(line))
+    else:
+        # find all videos and create a dummy annotation
+        video_files = list(base_dir.glob('**/*.mp4')) + list(base_dir.glob('**/*.avi'))
+        for video_file in video_files:
+            annotations.append({
+                'videos': [str(video_file.relative_to(base_dir))],
+                'audios': [],
+                'pose': None,
+                'face': None,
+                'opensmile': None
+            })
 
     # Process each sample
     for ann in tqdm(annotations, desc="Processing annotations"):
