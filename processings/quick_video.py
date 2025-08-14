@@ -19,10 +19,13 @@ def process_video(input_path, output_path):
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Setup video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    print(f"  Total frames: {total_frames}")
+
+    # Buffer to store processed frames
+    frame_buffer = []
+    SAVE_INTERVAL = 1000  # Save every 1000 frames
 
     # Initialize pose and face detection
     with mp_pose.Pose(
@@ -42,7 +45,7 @@ def process_video(input_path, output_path):
 
             frame_count += 1
             if frame_count % 100 == 0:
-                print(f"  Processing frame {frame_count}...")
+                print(f"  Processing frame {frame_count}/{total_frames}...")
 
             # Convert BGR to RGB
             image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -80,14 +83,38 @@ def process_video(input_path, output_path):
                         landmark_drawing_spec=None,
                         connection_drawing_spec=mp_drawing_styles.get_default_face_mesh_contours_style())
 
-            # Write frame
-            out.write(image_bgr)
+            # Add frame to buffer
+            frame_buffer.append(image_bgr)
+
+            # Save partial video every SAVE_INTERVAL frames
+            if frame_count % SAVE_INTERVAL == 0:
+                print(f"  Saving partial video at frame {frame_count}...")
+                save_video_buffer(frame_buffer, output_path, fps, width, height)
+
+    # Save any remaining frames
+    if frame_buffer:
+        print(f"  Saving final video with {frame_count} frames...")
+        save_video_buffer(frame_buffer, output_path, fps, width, height)
 
     # Release resources
     cap.release()
-    out.release()
     cv2.destroyAllWindows()
     print(f"  Completed: {output_path}")
+
+
+def save_video_buffer(frame_buffer, output_path, fps, width, height):
+    """Save the accumulated frame buffer to video file, overwriting if exists."""
+
+    # Setup video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+
+    # Write all frames
+    for frame in frame_buffer:
+        out.write(frame)
+
+    # Release writer
+    out.release()
 
 
 def traverse_and_process(directory):
