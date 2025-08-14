@@ -481,10 +481,6 @@ def main():
 
     args = parser.parse_args()
 
-    if not os.path.exists(args.annotation_path):
-        print(f"Error: Annotation file not found: {args.annotation_path}")
-        return
-
     process_annotations(
         args.annotation_path,
         device=args.device,
