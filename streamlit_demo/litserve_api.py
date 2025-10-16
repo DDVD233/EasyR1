@@ -2,7 +2,10 @@
 import litserve as ls
 from litserve.specs.openai import ChatCompletionRequest
 from transformers import AutoProcessor
-from vllm import LLM, SamplingParams
+from vllm import SamplingParams
+from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.async_llm_engine import AsyncLLMEngine
+from vllm.utils import random_uuid
 
 
 # Define your model constants
@@ -57,16 +60,18 @@ class Qwen25VLAPI(ls.LitAPI):
         if model_id not in QWEN2_5_VL_MODELS.values():
             model_id = DEFAULT_MODEL
 
-        # Initialize vLLM model with vision support
-        self.model = LLM(
+        # Initialize AsyncLLMEngine for streaming support
+        engine_args = AsyncEngineArgs(
             model=model_id,
             dtype="bfloat16",
+            trust_remote_code=True,
             max_model_len=8192,
             limit_mm_per_prompt={"image": 10, "video": 10},  # Support multiple images/videos
             # Enable tensor parallelism if you have multiple GPUs
-            tensor_parallel_size=2,
-            gpu_memory_utilization=0.6
+            # tensor_parallel_size=2,
+            gpu_memory_utilization=0.6,
         )
+        self.model = AsyncLLMEngine.from_engine_args(engine_args)
 
         self.processor = AutoProcessor.from_pretrained(model_id)
         self.device = device
@@ -125,7 +130,7 @@ class Qwen25VLAPI(ls.LitAPI):
             print(f"Error in decode_request: {e}")
             raise
 
-    def predict(self, model_inputs, context: dict):
+    async def predict(self, model_inputs, context: dict):
         # Extract prompt and multi-modal data
         prompt = model_inputs["prompt"]
         multi_modal_data = model_inputs.get("multi_modal_data")
@@ -133,21 +138,31 @@ class Qwen25VLAPI(ls.LitAPI):
         # Get sampling parameters
         sampling_params = context["sampling_params"]
 
-        # Generate with vLLM
+        # Generate a unique request ID
+        request_id = random_uuid()
+
+        # Generate with vLLM AsyncEngine
         # For multi-modal inputs, wrap prompt and data in dict format
         if multi_modal_data:
             vllm_inputs = {
                 "prompt": prompt,
                 "multi_modal_data": multi_modal_data,
             }
-            outputs = self.model.generate(vllm_inputs, sampling_params=sampling_params)
+            results_generator = self.model.generate(vllm_inputs, sampling_params, request_id)
         else:
             # Text-only generation
-            outputs = self.model.generate(prompt, sampling_params=sampling_params)
+            results_generator = self.model.generate(prompt, sampling_params, request_id)
 
-        # Extract the generated text from the output
-        generated_text = outputs[0].outputs[0].text
-        yield generated_text
+        # Stream the results token by token
+        previous_text = ""
+        async for request_output in results_generator:
+            # Extract the new text that was generated
+            current_text = request_output.outputs[0].text
+            # Yield only the new tokens (delta)
+            new_text = current_text[len(previous_text):]
+            if new_text:
+                yield new_text
+            previous_text = current_text
 
 
 # Start the server
