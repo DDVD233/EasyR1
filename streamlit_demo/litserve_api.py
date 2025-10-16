@@ -168,6 +168,6 @@ class Qwen25VLAPI(ls.LitAPI):
 
 # Start the server
 if __name__ == "__main__":
-    api = Qwen25VLAPI()
-    server = ls.LitServer(api, spec=ls.OpenAISpec(), accelerator="gpu")
+    api = Qwen25VLAPI(spec=ls.OpenAISpec())
+    server = ls.LitServer(api, accelerator="cuda")
     server.run(port=8000)

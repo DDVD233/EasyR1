@@ -557,7 +557,7 @@ with left_col:
                                 image_data = image_url.split(",")[1]
                                 image_bytes = base64.b64decode(image_data)
                                 image = Image.open(BytesIO(image_bytes))
-                                st.image(image, use_container_width=True)
+                                st.image(image, width='stretch')
                     elif isinstance(item, str):
                         st.markdown(item)
             else:
@@ -611,7 +611,7 @@ with right_col:
         # Display the uploaded image
         try:
             image = Image.open(uploaded_file)
-            st.image(image, caption="Uploaded Image", use_container_width=True)
+            st.image(image, caption="Uploaded Image", width='stretch')
 
             # Convert to base64 and store for use in the chat
             img_base64 = encode_image(image)
@@ -730,7 +730,7 @@ with right_col:
                             img = Image.open(img_path)
                             # Resize for thumbnails
                             # img.thumbnail((150, 150))
-                            st.image(img, use_container_width=True)
+                            st.image(img, width='stretch')
 
                             # Create unique button key for each image
                             if st.button("Select", key=f"img_btn_{sample_idx}"):
