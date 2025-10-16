@@ -65,7 +65,7 @@ class Qwen25VLAPI(ls.LitAPI):
             model=model_id,
             dtype="bfloat16",
             trust_remote_code=True,
-            max_model_len=8192,
+            max_model_len=16384,
             limit_mm_per_prompt={"image": 10, "video": 10},  # Support multiple images/videos
             # Enable tensor parallelism if you have multiple GPUs
             # tensor_parallel_size=2,
@@ -87,7 +87,7 @@ class Qwen25VLAPI(ls.LitAPI):
 
         # Create SamplingParams for vLLM
         context["sampling_params"] = SamplingParams(
-            max_tokens=request.max_tokens if request.max_tokens else 2048,
+            max_tokens=request.max_tokens if request.max_tokens else 4096,
             temperature=request.temperature if request.temperature is not None else 0.7,
             top_p=request.top_p if request.top_p is not None else 0.9,
         )
