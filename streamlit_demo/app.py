@@ -269,7 +269,7 @@ if "uploader_key" not in st.session_state:
 if "processed_image" not in st.session_state:
     st.session_state.processed_image = False
 if "model_name" not in st.session_state:
-    st.session_state.model_name = "qwen2-vl-7b-instruct"
+    st.session_state.model_name = "QoQ-Med-7B"
 if "selected_sample" not in st.session_state:
     st.session_state.selected_sample = None
 # Store fixed sample indices for consistency across refreshes
@@ -580,7 +580,7 @@ with right_col:
 
     model_name = st.selectbox(
         "Select model",
-        ["qwen2-vl-7b-instruct"],  # You can add more models later
+        ["QoQ-Med-7B", "QoQ-Med-32B"],  # You can add more models later
         index=0,
         key="model_name",  # This ties the widget to session state
     )
