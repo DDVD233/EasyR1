@@ -13,8 +13,8 @@ from transformers import (
 
 
 # Define your model constants
-DEFAULT_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
-QWEN2_5_VL_MODELS = {"qwen2.5-vl-7b-instruct": "Qwen/Qwen2.5-VL-7B-Instruct"}
+DEFAULT_MODEL = "ddvd233/QoQ-Med-VL-7B"
+QWEN2_5_VL_MODELS = {"QoQ-Med-7B": "ddvd233/QoQ-Med-VL-7B"}
 
 
 def process_vision_info(messages):
