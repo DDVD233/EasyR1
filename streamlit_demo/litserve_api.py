@@ -61,11 +61,10 @@ class Qwen25VLAPI(ls.LitAPI):
         self.model = LLM(
             model=model_id,
             dtype="bfloat16",
-            trust_remote_code=True,
             max_model_len=8192,
             limit_mm_per_prompt={"image": 10, "video": 10},  # Support multiple images/videos
             # Enable tensor parallelism if you have multiple GPUs
-            # tensor_parallel_size=2,
+            tensor_parallel_size=2,
         )
 
         self.processor = AutoProcessor.from_pretrained(model_id)
