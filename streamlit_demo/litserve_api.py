@@ -65,6 +65,7 @@ class Qwen25VLAPI(ls.LitAPI):
             limit_mm_per_prompt={"image": 10, "video": 10},  # Support multiple images/videos
             # Enable tensor parallelism if you have multiple GPUs
             tensor_parallel_size=2,
+            gpu_memory_utilization=0.6
         )
 
         self.processor = AutoProcessor.from_pretrained(model_id)
