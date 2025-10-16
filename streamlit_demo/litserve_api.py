@@ -72,7 +72,7 @@ class Qwen25VLAPI(ls.LitAPI):
 
         self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_id,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             attn_implementation="flash_attention_2",
             device_map="auto",
             # quantization_config=quantization_config,  # Uncomment if needed
