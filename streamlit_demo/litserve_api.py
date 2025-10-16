@@ -64,11 +64,10 @@ class Qwen25VLAPI(ls.LitAPI):
         engine_args = AsyncEngineArgs(
             model=model_id,
             dtype="bfloat16",
-            trust_remote_code=True,
             max_model_len=16384,
             limit_mm_per_prompt={"image": 10, "video": 10},  # Support multiple images/videos
             # Enable tensor parallelism if you have multiple GPUs
-            # tensor_parallel_size=2,
+            tensor_parallel_size=2,
             gpu_memory_utilization=0.6,
         )
         self.model = AsyncLLMEngine.from_engine_args(engine_args)
