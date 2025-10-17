@@ -11,7 +11,7 @@ from PIL import Image
 
 
 # Configure the page
-st.set_page_config(page_title="Medical Image Analysis Demo", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="QoQ-Med: Multimodal Clinical Foundation Model", page_icon="🔬", layout="wide")
 
 # Initialize the OpenAI client to connect to your local API
 client = OpenAI(
@@ -20,8 +20,8 @@ client = OpenAI(
 )
 
 # Set up the Streamlit app
-st.title("Medical Image Analysis Demo")
-st.markdown("Analyze medical images using AI")
+st.title("QoQ-Med: Multimodal Clinical Foundation Model")
+st.markdown("Analyze multimodal medical data with unified large model")
 
 
 # Function to format and display the assistant's response
