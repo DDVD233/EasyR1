@@ -383,15 +383,11 @@ with left_col:
                                 with st.expander("AI's Reasoning Process", expanded=True):
                                     st.markdown(
                                         f"""
-                                    <div style="background-color: #f0f5ff; 
-                                                border-left: 5px solid #7792e3; 
-                                                padding: 10px; 
-                                                border-radius: 5px;">
-                                        <small style="color: #555;">Reasoning Process:</small>
-                                        <div style="white-space: pre-wrap;">{parsed['content']}</div>
-                                    </div>
-                                    """,
-                                        unsafe_allow_html=True,
+                                                    <div style="background-color: #f0f5ff; 
+                                                                border-left: 5px solid #7792e3;">
+                                                        <div>{parsed['content']}</div>
+                                                    </div>
+                                                    """, unsafe_allow_html=True,
                                     )
 
                         elif current_mode == "post_thinking":
@@ -401,14 +397,11 @@ with left_col:
                                 with st.expander("AI's Reasoning Process", expanded=True):
                                     st.markdown(
                                         f"""
-                                    <div style="background-color: #f0f5ff; 
-                                                border-left: 5px solid #7792e3; 
-                                                padding: 10px; 
-                                                border-radius: 5px;">
-                                        <small style="color: #555;">Reasoning Process:</small>
-                                        <div style="white-space: pre-wrap;">{thinking_content}</div>
-                                    </div>
-                                    """,
+                                                    <div style="background-color: #f0f5ff; 
+                                                                border-left: 5px solid #7792e3;">
+                                                        <div>{thinking_content}</div>
+                                                    </div>
+                                                    """,
                                         unsafe_allow_html=True,
                                     )
 
