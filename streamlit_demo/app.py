@@ -384,7 +384,8 @@ with left_col:
                                     st.markdown(
                                         f"""
                                                     <div style="background-color: #f0f5ff; 
-                                                                border-left: 5px solid #7792e3;">
+                                                                border-left: 5px solid #7792e3;
+                                                                padding: 10px; ">
                                                         <div>{parsed['content']}</div>
                                                     </div>
                                                     """, unsafe_allow_html=True,
@@ -398,7 +399,8 @@ with left_col:
                                     st.markdown(
                                         f"""
                                                     <div style="background-color: #f0f5ff; 
-                                                                border-left: 5px solid #7792e3;">
+                                                                border-left: 5px solid #7792e3;
+                                                                padding: 10px; ">
                                                         <div>{thinking_content}</div>
                                                     </div>
                                                     """,
