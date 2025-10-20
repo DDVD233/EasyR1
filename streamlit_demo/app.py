@@ -55,8 +55,7 @@ def format_assistant_response(response_text):
                             border-left: 5px solid #7792e3; 
                             padding: 10px; 
                             border-radius: 5px;">
-                    <small style="color: #555;">Reasoning Process:</small>
-                    <div style="white-space: pre-wrap;">{thinking}</div>
+                    <div>{thinking}</div>
                 </div>
                 """,
                     unsafe_allow_html=True,
